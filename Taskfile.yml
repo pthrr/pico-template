@@ -1,0 +1,86 @@
+# https://taskfile.dev
+
+version: "3"
+
+tasks:
+  default:
+    silent: true
+    cmds:
+      - cmd: task --list-all
+
+  clean:
+    cmds:
+      - cmd: rm -rf build
+        platforms: [linux]
+
+  config_linux:
+    internal: true
+    platforms: [linux]
+    cmds:
+      - cmake -DCMAKE_BUILD_TYPE=Release -B build/Release -S .
+    sources:
+      - CMakePresets.json
+      - CMakeLists.txt
+      - src/**/CMakeLists.txt
+      - include/**/CMakeLists.txt
+      - tests/**/CMakeLists.txt
+      - external/**/CMakeLists.txt
+      - cmake/**/CMakeLists.txt
+    generates:
+      - build/Release/compile_commands.json
+      - build/compile_commands.json
+
+  config_linux_debug:
+    internal: true
+    platforms: [linux]
+    cmds:
+      - cmake -DCMAKE_BUILD_TYPE=Debug -B build/Debug -S .
+    sources:
+      - CMakePresets.json
+      - CMakeLists.txt
+      - src/**/CMakeLists.txt
+      - include/**/CMakeLists.txt
+      - tests/**/CMakeLists.txt
+      - external/**/CMakeLists.txt
+      - cmake/**/CMakeLists.txt
+    generates:
+      - build/Debug/compile_commands.json
+      - build/compile_commands.json
+
+  config_debug:
+    cmds:
+      - task: config_linux_debug
+
+  config:
+    cmds:
+      - task: config_linux
+
+  build_debug:
+    cmds:
+      - task: config_debug
+      - cmd: cmake --build build/Debug
+
+  build:
+    cmds:
+      - task: config
+      - cmd: cmake --build build/Release
+
+  pack:
+    cmds:
+      - task: build
+      - cmd: cd build/Release && cpack -B install -C Release
+
+  test:
+    cmds:
+      - task: build
+      - cmd: ctest --test-dir build/Release/tests --output-on-failure
+
+  run_debug:
+    cmds:
+      - task: build_debug
+      - cmd: build/Debug/src/my_project --config data/config/config.json --debug
+
+  run:
+    cmds:
+      - task: build
+      - cmd: build/Release/src/my_project --config data/config/config.json
