@@ -1,0 +1,17 @@
+session_name: pico
+start_directory: .
+windows:
+  - window_name: dev
+    layout: main-horizontal
+    options:
+      main-pane-height: 75%
+    panes:
+      - shell_command:
+          - nvim
+        focus: True
+      - shell_command:
+          - task start_picocom
+        width: 50%
+      - shell_command:
+          - task start_openocd
+        width: 50%

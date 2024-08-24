@@ -84,3 +84,19 @@ tasks:
     cmds:
       - task: build
       - cmd: build/Release/src/my_project --config data/config/config.json
+
+  start_openocd:
+    cmds:
+      - sudo openocd -f interface/cmsis-dap.cfg -f target/rp2040.cfg -c "adapter speed 5000"
+
+  start_picocom:
+    cmds:
+      - sudo picocom --noreset --nolock --omap crlf /dev/ttyACM0 -b 115200
+
+  load_pico:
+    cmds:
+      - tmuxp load pico.yml
+
+  kill_pico:
+    cmds:
+      - tmux kill-session -t pico
