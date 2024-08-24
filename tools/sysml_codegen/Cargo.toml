@@ -1,0 +1,9 @@
+[package]
+name = "sysml-codegen"
+version = "0.1.0"
+edition = "2021"
+build = "build.rs"
+
+[[bin]]
+name = "sysml-codegen"
+path = "src/main.rs"

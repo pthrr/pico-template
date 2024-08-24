@@ -1,2 +1,0 @@
-Checks: 'bugprone-*,cppcoreguidelines-*,hicpp-*,modernize-*,performance-*,readability-*,portability-*'
-FormatStyle: 'file'

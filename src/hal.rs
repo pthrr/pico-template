@@ -1,0 +1,51 @@
+//! Hardware Abstraction Layer - Platform-agnostic GPIO traits
+
+/// Trait for digital output pins
+pub trait OutputPin {
+    fn set_high(&mut self);
+    fn set_low(&mut self);
+}
+
+/// Trait for digital input pins
+pub trait InputPin {
+    fn is_low(&self) -> bool;
+    fn is_high(&self) -> bool {
+        !self.is_low()
+    }
+}
+
+// RP2040 implementations
+#[cfg(any(feature = "pico1", feature = "pico2"))]
+impl OutputPin for embassy_rp::gpio::Output<'_> {
+    fn set_high(&mut self) {
+        embassy_rp::gpio::Output::set_high(self);
+    }
+    fn set_low(&mut self) {
+        embassy_rp::gpio::Output::set_low(self);
+    }
+}
+
+#[cfg(any(feature = "pico1", feature = "pico2"))]
+impl InputPin for embassy_rp::gpio::Input<'_> {
+    fn is_low(&self) -> bool {
+        embassy_rp::gpio::Input::is_low(self)
+    }
+}
+
+// STM32 implementations (Arduino UNO Q)
+#[cfg(feature = "unoq")]
+impl OutputPin for embassy_stm32::gpio::Output<'_> {
+    fn set_high(&mut self) {
+        embassy_stm32::gpio::Output::set_high(self);
+    }
+    fn set_low(&mut self) {
+        embassy_stm32::gpio::Output::set_low(self);
+    }
+}
+
+#[cfg(feature = "unoq")]
+impl InputPin for embassy_stm32::gpio::Input<'_> {
+    fn is_low(&self) -> bool {
+        embassy_stm32::gpio::Input::is_low(self)
+    }
+}

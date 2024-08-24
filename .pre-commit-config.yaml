@@ -1,0 +1,54 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+        exclude: ^(src/generated/|model/mcrl2/)
+      - id: end-of-file-fixer
+        exclude: ^(src/generated/|model/mcrl2/)
+      - id: mixed-line-ending
+        exclude: ^(src/generated/|model/mcrl2/)
+      - id: check-yaml
+      - id: check-toml
+
+  - repo: local
+    hooks:
+      - id: generate
+        name: generate SysML outputs
+        entry: task generate
+        language: system
+        pass_filenames: false
+        files: ^(model/.*\.sysml|tools/sysml_codegen/|src/(?!generated/).*\.rs$)
+
+      - id: rustfmt
+        name: rustfmt
+        entry: cargo fmt
+        language: system
+        types: [rust]
+        exclude: ^src/generated/
+        pass_filenames: false
+
+      - id: rustfmt-codegen
+        name: rustfmt (sysml_codegen)
+        entry: bash -c 'cd tools/sysml_codegen && cargo fmt'
+        language: system
+        types: [rust]
+        files: ^tools/sysml_codegen/
+        pass_filenames: false
+
+      - id: clippy-codegen
+        name: clippy (sysml_codegen)
+        entry: bash -c 'cd tools/sysml_codegen && cargo clippy --target x86_64-unknown-linux-gnu -- -D warnings'
+        language: system
+        types: [rust]
+        files: ^tools/sysml_codegen/
+        pass_filenames: false
+
+      - id: clippy
+        name: clippy
+        entry: bash -c 'cargo clippy --lib --no-default-features --features pico1 --target thumbv6m-none-eabi -- -D warnings && cargo clippy --bin pico-template --no-default-features --features pico1 --target thumbv6m-none-eabi -- -D warnings && cargo clippy --lib --no-default-features --features pico2 --target thumbv8m.main-none-eabihf -- -D warnings && cargo clippy --bin pico-template --no-default-features --features pico2 --target thumbv8m.main-none-eabihf -- -D warnings && cargo clippy --lib --no-default-features --features unoq --target thumbv8m.main-none-eabihf -- -D warnings && cargo clippy --bin pico-template --no-default-features --features unoq --target thumbv8m.main-none-eabihf -- -D warnings'
+        language: system
+        types: [rust]
+        exclude: ^src/generated/
+        pass_filenames: false
+        files: ^src/(?!generated/).*\.rs$

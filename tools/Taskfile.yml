@@ -1,0 +1,42 @@
+version: "3"
+
+vars:
+  MODEL_DIR: "{{.ROOT_DIR}}/model"
+  OUTPUT_DIR: "{{.ROOT_DIR}}/src/generated"
+  MCRL2_DIR: "{{.ROOT_DIR}}/model/mcrl2"
+
+tasks:
+  default:
+    silent: true
+    hidden: true
+    cmds:
+      - task --list-all
+
+  test:
+    desc: Unit + integration tests (includes host-side state machine tests)
+    deps: [generate]
+    dir: sysml_codegen
+    env:
+      GENERATED_DIR: "{{.OUTPUT_DIR}}"
+      MODEL_DIR: "{{.MODEL_DIR}}"
+    cmds:
+      - RUSTFLAGS="" cargo test --target x86_64-unknown-linux-gnu
+
+  check:
+    desc: Type-check sysml_codegen
+    deps: [generate]
+    dir: sysml_codegen
+    env:
+      GENERATED_DIR: "{{.OUTPUT_DIR}}"
+      MODEL_DIR: "{{.MODEL_DIR}}"
+    cmds:
+      - RUSTFLAGS="" cargo check --target x86_64-unknown-linux-gnu
+
+  generate:
+    desc: Generate Rust and mCRL2 code from all SysML models
+    dir: sysml_codegen
+    cmds:
+      - RUSTFLAGS="" cargo run --target x86_64-unknown-linux-gnu -- --output-dir {{.OUTPUT_DIR}} --mcrl2-dir {{.MCRL2_DIR}} {{.MODEL_DIR}}/*.sysml
+    sources:
+      - "{{.MODEL_DIR}}/*.sysml"
+      - src/*.rs

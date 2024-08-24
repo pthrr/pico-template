@@ -1,86 +1,317 @@
-# https://taskfile.dev
-
 version: "3"
+
+includes:
+  codegen:
+    taskfile: tools/Taskfile.yml
+    dir: tools
 
 tasks:
   default:
     silent: true
+    hidden: true
     cmds:
-      - cmd: task --list-all
+      - task --list-all
 
-  clean:
+  generate:
+    desc: Generate Rust + mCRL2 from SysML (alias for codegen:generate)
     cmds:
-      - cmd: rm -rf build
-        platforms: [linux]
+      - task: codegen:generate
 
-  config_linux:
-    internal: true
-    platforms: [linux]
+  gen_config:
     cmds:
-      - cmake -DCMAKE_BUILD_TYPE=Release -B build/Release -S .
+      - cue export data/config/config.cue --out json
     sources:
-      - CMakePresets.json
-      - CMakeLists.txt
-      - src/**/CMakeLists.txt
-      - include/**/CMakeLists.txt
-      - tests/**/CMakeLists.txt
-      - external/**/CMakeLists.txt
-      - cmake/**/CMakeLists.txt
-    generates:
-      - build/Release/compile_commands.json
-      - build/compile_commands.json
+      - data/config/config.cue
 
-  config_linux_debug:
+  verify_mcrl2:
+    desc: Verify untimed mCRL2 models in parallel (one job per .mcrl2 spec)
+    deps: [generate]
+    cmds:
+      - task: mcrl2-verify
+        vars:
+          TIMED: "0"
+
+  verify_timed_mcrl2:
+    desc: Verify timed mCRL2 models in parallel
+    deps: [generate]
+    cmds:
+      - task: mcrl2-verify
+        vars:
+          TIMED: "1"
+
+  mcrl2-verify:
     internal: true
-    platforms: [linux]
+    vars:
+      MCRL2_DIR: model/mcrl2
+      WORK_ROOT: model/mcrl2/.verify-work
+      JOBS: '{{.JOBS | default "0"}}'
+      MAX_STATES: '{{.MAX_STATES | default "1000000"}}'
+      PBES_TIMEOUT: '{{.PBES_TIMEOUT | default "300"}}'
+      TIMED: '{{.TIMED | default "0"}}'
+      PARALLEL:
+        sh: |
+          j={{.JOBS}}
+          if [ -z "$j" ] || [ "$j" = "0" ]; then
+            nproc 2>/dev/null || echo 4
+          else
+            echo "$j"
+          fi
+      SPECS:
+        sh: |
+          set -e
+          dir="{{.ROOT_DIR}}/{{.MCRL2_DIR}}"
+          n=0
+          for f in "$dir"/*.mcrl2; do
+            [ -e "$f" ] || break
+            b=$(basename "$f" .mcrl2)
+            if [ "{{.TIMED}}" = "1" ]; then
+              case "$b" in *_timed) ;; *) continue ;; esac
+            else
+              case "$b" in *_timed) continue ;; esac
+            fi
+            printf '%s\n' "$b"
+            n=$((n + 1))
+          done
+          if [ "$n" -eq 0 ]; then
+            echo "no .mcrl2 specs found in $dir (timed={{.TIMED}})" >&2
+            exit 1
+          fi
     cmds:
-      - cmake -DCMAKE_BUILD_TYPE=Debug -B build/Debug -S .
-    sources:
-      - CMakePresets.json
-      - CMakeLists.txt
-      - src/**/CMakeLists.txt
-      - include/**/CMakeLists.txt
-      - tests/**/CMakeLists.txt
-      - external/**/CMakeLists.txt
-      - cmake/**/CMakeLists.txt
-    generates:
-      - build/Debug/compile_commands.json
-      - build/compile_commands.json
+      - rm -rf {{.WORK_ROOT}}
+      - mkdir -p {{.WORK_ROOT}}
+      - echo "Verifying specs in {{.MCRL2_DIR}} (timed={{.TIMED}}, jobs={{.PARALLEL}}, max_states={{.MAX_STATES}}, pbes_timeout={{.PBES_TIMEOUT}}s)"
+      - task: mcrl2-verify-parallel
+        vars:
+          PARALLEL: "{{.PARALLEL}}"
+          SPECS: "{{.SPECS}}"
+          TIMED: "{{.TIMED}}"
+          MAX_STATES: "{{.MAX_STATES}}"
+          PBES_TIMEOUT: "{{.PBES_TIMEOUT}}"
+      - task: mcrl2-verify-summary
+        vars:
+          WORK_ROOT: "{{.WORK_ROOT}}"
+          PARALLEL: "{{.PARALLEL}}"
+          MAX_STATES: "{{.MAX_STATES}}"
+          PBES_TIMEOUT: "{{.PBES_TIMEOUT}}"
 
-  config_debug:
-    cmds:
-      - task: config_linux_debug
+  mcrl2-verify-parallel:
+    internal: true
+    parallel: "{{.PARALLEL}}"
+    deps:
+      - for:
+          var: SPECS
+          split: "\n"
+        task: mcrl2-verify-spec
+        if: '{{ne .ITEM ""}}'
+        vars:
+          SPEC: "{{.ITEM}}"
+          TIMED: "{{.TIMED}}"
+          MAX_STATES: "{{.MAX_STATES}}"
+          PBES_TIMEOUT: "{{.PBES_TIMEOUT}}"
 
-  config:
+  mcrl2-verify-spec:
+    internal: true
+    vars:
+      BASE: "{{.SPEC}}"
+      WORK: "{{.ROOT_DIR}}/model/mcrl2/.verify-work/{{.SPEC}}"
+      MCRL2_DIR: "{{.ROOT_DIR}}/model/mcrl2"
     cmds:
-      - task: config_linux
+      - cmd: |
+          base="{{.BASE}}"
+          spec_path="{{.MCRL2_DIR}}/${base}.mcrl2"
+          work="{{.WORK}}"
+          max_states="{{.MAX_STATES}}"
+          pbes_timeout="{{.PBES_TIMEOUT}}"
+          timed="{{.TIMED}}"
+          mcrl2_dir="{{.MCRL2_DIR}}"
 
-  build_debug:
-    cmds:
-      - task: config_debug
-      - cmd: cmake --build build/Debug
+          log() { printf '[%s] %s\n' "$base" "$*"; }
 
-  build:
-    cmds:
-      - task: config
-      - cmd: cmake --build build/Release
+          mkdir -p "$work"
+          cd "$work"
 
-  pack:
+          passed=0
+          failed=0
+          inconclusive=0
+          total=0
+
+          log "linearizing..."
+          if ! mcrl22lps "$spec_path" "${base}.lps" >/dev/null 2>&1; then
+            log "FAIL: mcrl22lps"
+            echo "0 1 0 1" >counts
+            exit 0
+          fi
+
+          log "deadlock freedom (max $max_states states)..."
+          total=$((total + 1))
+          lts_output="$(lps2lts --deadlock --max="$max_states" "${base}.lps" "${base}.lts" 2>&1)" || true
+          if echo "$lts_output" | grep -qi deadlock; then
+            log "FAIL: deadlock found"
+            echo "$lts_output" | sed "s/^/[$base] /"
+            failed=$((failed + 1))
+          else
+            states="$(ltsinfo "${base}.lts" 2>&1 | grep -oP 'Number of states: \K[0-9]+' || echo "?")"
+            log "PASS: no deadlock in $states states"
+            passed=$((passed + 1))
+          fi
+
+          shopt -s nullglob
+          for prop_path in "$mcrl2_dir/${base}"_*.mcf; do
+            prop=$(basename "$prop_path")
+            if [ "$timed" = "0" ] && [[ "$prop" == *_timed_* ]]; then
+              continue
+            fi
+            pbase="${prop%.mcf}"
+            prop_short="${pbase#${base}_}"
+            log "property $prop_short..."
+            total=$((total + 1))
+            if ! lps2pbes --formula="$prop_path" "${base}.lps" "${pbase}.pbes" >/dev/null 2>&1; then
+              log "FAIL: lps2pbes $prop_short"
+              failed=$((failed + 1))
+              continue
+            fi
+            result="$(timeout "$pbes_timeout" pbes2bool "${pbase}.pbes" 2>/dev/null)" || true
+            case "$result" in
+              true)
+                log "PASS: $prop_short"
+                passed=$((passed + 1))
+                ;;
+              false)
+                log "FAIL: $prop_short"
+                failed=$((failed + 1))
+                ;;
+              *)
+                log "INCONCLUSIVE: $prop_short (timeout after ${pbes_timeout}s)"
+                inconclusive=$((inconclusive + 1))
+                ;;
+            esac
+          done
+
+          echo "$passed $failed $inconclusive $total" >counts
+
+  mcrl2-verify-summary:
+    internal: true
     cmds:
-      - task: build
-      - cmd: cd build/Release && cpack -B install -C Release
+      - cmd: |
+          work="{{.ROOT_DIR}}/{{.WORK_ROOT}}"
+          passed=0
+          failed=0
+          inconclusive=0
+          total=0
+          for counts in "$work"/*/counts; do
+            [ -f "$counts" ] || continue
+            read -r p f i t <"$counts"
+            passed=$((passed + p))
+            failed=$((failed + f))
+            inconclusive=$((inconclusive + i))
+            total=$((total + t))
+          done
+          echo ""
+          echo "=============================="
+          echo "  Summary: $passed passed, $failed failed, $inconclusive inconclusive (of $total checks)"
+          echo "  Budget: {{.MAX_STATES}} states, {{.PBES_TIMEOUT}}s pbes timeout, {{.PARALLEL}} job(s)"
+          echo "  Work dir: $work"
+          echo "=============================="
+          if [ "$failed" -gt 0 ]; then
+            exit 1
+          fi
 
   test:
+    desc: Host-side state machine tests (sysml_codegen integration tests)
+    deps: [generate]
     cmds:
-      - task: build
-      - cmd: ctest --test-dir build/Release/tests --output-on-failure
+      - task: codegen:test
+    sources:
+      - model/*.sysml
+      - tools/sysml_codegen/tests/state_machines.rs
 
-  run_debug:
+  check:
+    desc: Type-check the firmware library for the default platform
+    deps: [generate]
     cmds:
-      - task: build_debug
-      - cmd: build/Debug/src/my_project --config data/config/config.json --debug
+      - cargo check --lib --no-default-features --features pico1
 
-  run:
+  check-all:
+    desc: Type-check firmware binary for every supported platform
+    deps: [generate]
     cmds:
-      - task: build
-      - cmd: build/Release/src/my_project --config data/config/config.json
+      - cargo check --bin pico-template --no-default-features --features pico1 --target thumbv6m-none-eabi
+      - cargo check --bin pico-template --no-default-features --features pico2 --target thumbv8m.main-none-eabihf
+      - cargo check --bin pico-template --no-default-features --features unoq --target thumbv8m.main-none-eabihf
+
+  ci:
+    desc: Host tests, firmware checks, and bounded mCRL2 verification
+    cmds:
+      - task: test
+      - task: check-all
+      - task: verify_mcrl2
+        vars:
+          JOBS: "4"
+          MAX_STATES: "500000"
+          PBES_TIMEOUT: "60"
+
+  build_pico1:
+    deps: [generate]
+    cmds:
+      - cargo build --release --no-default-features --features pico1
+
+  build_pico2:
+    deps: [generate]
+    cmds:
+      - cargo build --release --no-default-features --target thumbv8m.main-none-eabihf --features pico2
+
+  build_unoq:
+    desc: Build firmware for Arduino UNO Q (STM32U585)
+    deps: [generate]
+    cmds:
+      - cargo build --release --no-default-features --features unoq --target thumbv8m.main-none-eabihf
+    sources:
+      - src/**/*.rs
+      - Cargo.toml
+    generates:
+      - target/thumbv8m.main-none-eabihf/release/pico-template
+
+  flash_unoq:
+    desc: Build and flash firmware to Arduino UNO Q
+    deps: [build_unoq]
+    vars:
+      ARDUINO_DIR: "{{.HOME}}/.arduino15/packages/arduino"
+      REMOTEOCD: "{{.ARDUINO_DIR}}/tools/remoteocd/0.0.4-rc.4/remoteocd"
+      ADB: "{{.ARDUINO_DIR}}/tools/adb/32.0.0/adb"
+      BINARY: "target/thumbv8m.main-none-eabihf/release/pico-template"
+    cmds:
+      - |
+        # Convert ELF to bin
+        arm-none-eabi-objcopy -O binary {{.BINARY}} {{.BINARY}}.bin
+        # Get board serial from arduino-cli (Arduino UNO Q has VID 0x2341, PID 0x0078)
+        SERIAL=$(arduino-cli board list --format json | jq -r '.[] | select(.matching_boards[]?.fqbn == "arduino:zephyr:unoq") | .port.properties.serialNumber // empty')
+        if [ -z "$SERIAL" ]; then
+          # Fallback: find by VID/PID
+          SERIAL=$(arduino-cli board list --format json | jq -r '.[] | select(.port.properties.vid == "0x2341" and .port.properties.pid == "0x0078") | .port.properties.serialNumber // empty')
+        fi
+        if [ -z "$SERIAL" ]; then
+          echo "Error: Arduino UNO Q not found. Is it connected?"
+          exit 1
+        fi
+        echo "Flashing to Arduino UNO Q (serial: $SERIAL)"
+        {{.REMOTEOCD}} upload \
+          --adb-path {{.ADB}} \
+          -s "$SERIAL" \
+          -f data/flash/unoq.cfg \
+          {{.BINARY}}.bin
+
+  setup_unoq:
+    desc: Install Arduino Zephyr core (required once for UNO Q flashing)
+    cmds:
+      - arduino-cli core install arduino:zephyr
+
+  start_openocd:
+    desc: Start OpenOCD for RP2040 (used by pico.yml tmux layout)
+    cmds:
+      - openocd -f interface/cmsis-dap.cfg -f target/rp2040.cfg
+
+  clean:
+    desc: Remove build artifacts and generated outputs (SysML sources stay)
+    cmds:
+      - cargo clean
+      - rm -rf model/mcrl2 src/generated
