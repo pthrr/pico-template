@@ -19,3 +19,8 @@ set(CMAKE_CXX_STANDARD 23)
 
 message(STATUS "Compiler ID is: ${CMAKE_CXX_COMPILER_ID}")
 message(STATUS "Build type is: ${CMAKE_BUILD_TYPE}")
+
+if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+  add_compile_options(-ftrivial-auto-var-init=pattern)
+  add_compile_options(-O0 -g)
+endif()

@@ -87,7 +87,11 @@ tasks:
 
   start_openocd:
     cmds:
-      - sudo openocd -f interface/cmsis-dap.cfg -f target/rp2040.cfg -c "adapter speed 5000"
+      - sudo openocd -f interface/cmsis-dap.cfg -c 'set USE_CORE 0' -f target/rp2040.cfg -c "adapter speed 10000"
+
+  start_gdb:
+    cmds:
+      - ~/.local/xPacks/@xpack-dev-tools/arm-none-eabi-gcc/13.3.1-1.1.1/.content/bin/arm-none-eabi-gdb build/Debug/src/my_project.elf
 
   start_picocom:
     cmds:

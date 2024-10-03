@@ -1,5 +1,5 @@
 add_executable(${PROJECT_NAME} main.cpp)
-target_link_libraries(${PROJECT_NAME} pico_stdlib pico_multicore)
+target_link_libraries(${PROJECT_NAME} pico_stdlib pico_multicore cexception)
 
 pico_set_linker_script(${PROJECT_NAME} ${CMAKE_SOURCE_DIR}/scripts/memmap_default.ld)
 

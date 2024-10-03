@@ -18,6 +18,7 @@ file(GLOB_RECURSE ${PROJECT_NAME}_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOUR
 file(GLOB_RECURSE ${PROJECT_NAME}_HEADER CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/*.h)
 
 add_subdirectory(src)
+add_subdirectory(external)
 
 execute_process(
     COMMAND ${CMAKE_COMMAND} -E create_symlink
