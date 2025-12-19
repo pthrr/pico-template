@@ -1,4 +1,0 @@
-# pico-template
-
-- [ ] serial bootloader
-

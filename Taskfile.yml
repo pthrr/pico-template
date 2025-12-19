@@ -1,106 +1,48 @@
-# https://taskfile.dev
-
 version: "3"
 
 tasks:
   default:
     silent: true
     cmds:
-      - cmd: task --list-all
+      - task --list-all
 
-  clean:
+  gen_config:
     cmds:
-      - cmd: rm -rf build
-        platforms: [linux]
-
-  config_linux:
-    internal: true
-    platforms: [linux]
-    cmds:
-      - cmake -DCMAKE_BUILD_TYPE=Release -B build/Release -S .
+      - cue export data/config/config.cue --out json > config.json
     sources:
-      - CMakePresets.json
-      - CMakeLists.txt
-      - src/**/CMakeLists.txt
-      - include/**/CMakeLists.txt
-      - tests/**/CMakeLists.txt
-      - external/**/CMakeLists.txt
-      - cmake/**/CMakeLists.txt
-    generates:
-      - build/Release/compile_commands.json
-      - build/compile_commands.json
+      - data/config/config.cue
 
-  config_linux_debug:
-    internal: true
-    platforms: [linux]
+  gen_code:
     cmds:
-      - cmake -DCMAKE_BUILD_TYPE=Debug -B build/Debug -S .
+      - python3 tools/sysml_codegen.py model/*.sysml --output-dir=src/generated --gen-tla
     sources:
-      - CMakePresets.json
-      - CMakeLists.txt
-      - src/**/CMakeLists.txt
-      - include/**/CMakeLists.txt
-      - tests/**/CMakeLists.txt
-      - external/**/CMakeLists.txt
-      - cmake/**/CMakeLists.txt
-    generates:
-      - build/Debug/compile_commands.json
-      - build/compile_commands.json
+      - model/*.sysml
+      - tools/sysml_codegen.py
 
-  config_debug:
+  verify_tla:
     cmds:
-      - task: config_linux_debug
-
-  config:
-    cmds:
-      - task: config_linux
-
-  build_debug:
-    cmds:
-      - task: config_debug
-      - cmd: cmake --build build/Debug
-
-  build:
-    cmds:
-      - task: config
-      - cmd: cmake --build build/Release
-
-  pack:
-    cmds:
-      - task: build
-      - cmd: cd build/Release && cpack -B install -C Release
+      - |
+        nix develop -c bash -c '
+          cd model/tla
+          for spec in *.tla; do
+            echo "Verifying $spec..."
+            tlc -workers auto "$spec"
+          done
+        '
 
   test:
     cmds:
-      - task: build
-      - cmd: ctest --test-dir build/Release/tests --output-on-failure
+      - cargo check --lib --features pico1
 
-  run_debug:
+  build_pico1:
     cmds:
-      - task: build_debug
-      - cmd: build/Debug/src/my_project --config data/config/config.json --debug
+      - cargo build --release --features pico1
 
-  run:
+  build_pico2:
     cmds:
-      - task: build
-      - cmd: build/Release/src/my_project --config data/config/config.json
+      - cargo build --release --target thumbv8m.main-none-eabihf --features pico2
 
-  start_openocd:
+  clean:
     cmds:
-      - sudo openocd -f interface/cmsis-dap.cfg -c 'set USE_CORE 0' -f target/rp2040.cfg -c "adapter speed 10000"
-
-  start_gdb:
-    cmds:
-      - ~/.local/xPacks/@xpack-dev-tools/arm-none-eabi-gcc/13.3.1-1.1.1/.content/bin/arm-none-eabi-gdb build/Debug/src/my_project.elf
-
-  start_picocom:
-    cmds:
-      - sudo picocom --noreset --nolock --omap crlf /dev/ttyACM0 -b 115200
-
-  load_pico:
-    cmds:
-      - tmuxp load pico.yml
-
-  kill_pico:
-    cmds:
-      - tmux kill-session -t pico
+      - cargo clean
+      - rm -rf src/generated

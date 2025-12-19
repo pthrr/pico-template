@@ -1,0 +1,45 @@
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.8.4
+    hooks:
+      - id: ruff
+        args: [--fix]
+        files: ^tools/.*\.py$
+      - id: ruff-format
+        files: ^tools/.*\.py$
+
+  # - repo: https://github.com/astral-sh/ty-pre-commit
+  #   rev: v0.1.0
+  #   hooks:
+  #     - id: ty
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+        exclude: ^(src/generated/|model/tla/)
+      - id: end-of-file-fixer
+        exclude: ^(src/generated/|model/tla/)
+      - id: mixed-line-ending
+        exclude: ^(src/generated/|model/tla/)
+      - id: check-yaml
+      - id: check-toml
+
+  - repo: local
+    hooks:
+      - id: rustfmt
+        name: rustfmt
+        entry: cargo fmt --all
+        language: system
+        types: [rust]
+        exclude: ^src/generated/
+        pass_filenames: false
+
+      - id: clippy
+        name: clippy
+        entry: bash -c 'cargo clippy --lib --features pico1 -- -D warnings && cargo clippy --bin pico-template --features pico1 -- -D warnings && cargo clippy --lib --features pico2 -- -D warnings && cargo clippy --bin pico-template --features pico2 -- -D warnings'
+        language: system
+        types: [rust]
+        exclude: ^src/generated/
+        pass_filenames: false
+        files: ^src/(?!generated/).*\.rs$
