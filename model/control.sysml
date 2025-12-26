@@ -1,7 +1,7 @@
 // Real-time control actor - runs on Core 0 at 1kHz
 // Triggered by hardware timer interrupt for precise timing
 package Control {
-
+    private import ScalarValues::*;
     // Real-time control actor
     part def RealtimeControlActor {
         // Attributes with types and defaults
@@ -21,19 +21,22 @@ package Control {
         // Core affinity
         attribute core : Integer = 0;  // Core 0 for time-critical tasks
 
+
         state machine {
+
             state initializing {
-                doc "Waiting for system ready"
+                doc /* "Waiting for system ready" */
                 // Entry action: reset counters
                 entry action initialize {
                     cycle_count := 0;
                     control_value := 0.0;
                     error_flag := false;
                 }
+
             }
 
             state running {
-                doc "Normal control loop execution"
+                doc /*"Normal control loop execution"*/
                 // Do action: increment cycle counter
                 do action count {
                     cycle_count := cycle_count + 1;
@@ -41,7 +44,7 @@ package Control {
             }
 
             state processing {
-                doc "Computing control output"
+                doc /*"Computing control output"*/
                 // Do action: compute control value
                 do action compute {
                     // Placeholder for control algorithm
@@ -50,7 +53,7 @@ package Control {
             }
 
             state outputting {
-                doc "Sending control command"
+                doc /*"Sending control command"*/
                 // Do action: send output
                 do action send_output {
                     // Send control_value to actuators
@@ -58,45 +61,62 @@ package Control {
             }
 
             state error {
-                doc "Error state, control disabled"
+                doc /*"Error state, control disabled"*/
                 entry action set_safe_state {
                     control_value := 0.0;
                     enabled := false;
                 }
             }
 
+
             // Transitions with guards
-            transition initializing to running
-                when cycle_count > 100
-                doc "System initialization complete after 100 cycles";
+            doc /* "System initialization complete after 100 cycles */
+            transition init_to_run
+                first initializing
+                if cycle_count > 100
+                then running;
 
-            transition running to processing
-                when enabled
-                doc "Begin processing if system is enabled";
+            transition two
+                first running
+                if enabled
+                then processing;
 
-            transition processing to outputting
-                doc "Output computed control value";
 
-            transition outputting to running
-                doc "Return to running state";
 
-            transition running to error
-                when error_flag
-                doc "Enter error state on fault detection";
+            doc /* Output computed control value */
+            transition first processing then outputting;
 
-            transition error to initializing
-                doc "Reset and reinitialize after error";
+            doc /* Return to running state */
+            transition first outputting then running;
+
+            doc /* Enter error state on fault detection */
+            transition first running if error_flag then error;
+
+            doc /* Reset and reinitialize after error */
+            transition first error then initializing;
+
         }
+
+
 
         // Requirements
-        require {
-            doc "Control loop must execute at 1kHz ± 50us jitter"
-            execution_period_ms == 1 and max_jitter_us <= 50
+        requirement {
+            subject;
+            doc /* Control loop must execute at 1kHz ± 50us jitter */
+            require constraint {
+                execution_period_ms <= 1 and max_jitter_us <= 50e-6 [SI::s]
+            }
         }
 
-        require {
-            doc "Maximum execution time must not exceed 800us"
-            max_execution_time_us <= 800
+        requirement {
+            subject;
+            doc /* Maximum execution time must not exceed 800us */
+            require constraint {
+                max_execution_time_us <= 800e-6 [SI::s]
+            }
         }
+
+
     }
+
 }

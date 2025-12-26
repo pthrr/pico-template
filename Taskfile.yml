@@ -3,18 +3,19 @@ version: "3"
 tasks:
   default:
     silent: true
+    hidden: true
     cmds:
       - task --list-all
 
   gen_config:
     cmds:
-      - cue export data/config/config.cue --out json > config.json
+      - cue export data/config/config.cue --out json
     sources:
       - data/config/config.cue
 
   gen_code:
     cmds:
-      - python3 tools/sysml_codegen.py model/*.sysml --output-dir=src/generated --gen-tla
+      - python3 tools/sysml_codegen.py model/*.sysml --output-dir=src/generated
     sources:
       - model/*.sysml
       - tools/sysml_codegen.py

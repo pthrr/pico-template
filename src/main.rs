@@ -85,8 +85,14 @@ async fn main(spawner: Spawner) {
     defmt::info!("Starting multi-core system..");
     let p = embassy_rp::init(Default::default());
 
-    let led = Output::new(p.PIN_25, Level::Low);
-    let button = Input::new(p.PIN_2, Pull::Up);
+    let led = match LED_PIN {
+        25 => Output::new(p.PIN_25, Level::Low),
+        _ => panic!("Unsupported LED pin"),
+    };
+    let button = match BUTTON_PIN {
+        2 => Input::new(p.PIN_2, Pull::Up),
+        _ => panic!("Unsupported button pin"),
+    };
 
     // Core 0: High-priority real-time control task (1kHz)
     defmt::info!("Core 0: Spawning control task");

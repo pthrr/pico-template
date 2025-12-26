@@ -1,6 +1,7 @@
 // Maintenance actor - runs on Core 1 at 10Hz
 // Toggles LED every 1 second (10 cycles)
 package Maintenance {
+    private import ScalarValues::*;
 
     // Maintenance actor
     part def MaintenanceActor {
@@ -12,25 +13,25 @@ package Maintenance {
 
         // Timing constraint: 10Hz execution rate (100ms period)
         attribute execution_period_ms : Integer = 100;
-        attribute led_toggle_interval_cycles : Integer = 10;  // Toggle every 10 cycles = 1s
+        attribute led_toggle_interval_cycles : Integer = 10;
 
         // Performance constraints
-        attribute max_execution_time_us : Integer = 5000;  // 5ms max
-        attribute priority : Integer = 5;  // Medium priority
+        attribute max_execution_time_us : Integer = 5000;
+        attribute priority : Integer = 5;
 
         // Core affinity
-        attribute core : Integer = 1;  // Core 1 for non-critical tasks
+        attribute core : Integer = 1;
 
         state machine {
             state idle {
-                doc "Waiting for next tick"
+                doc /*"Waiting for next tick"*/
                 entry action reset_tick {
                     tick_count := 0;
                 }
             }
 
             state checking {
-                doc "Checking system health"
+                doc /*"Checking system health"*/
                 do action increment_tick {
                     tick_count := tick_count + 1;
                 }
@@ -41,52 +42,59 @@ package Maintenance {
             }
 
             state toggling {
-                doc "Toggling LED if needed"
+                doc /*"Toggling LED if needed"*/
                 do action toggle_led {
                     led_state := not led_state;
-                    tick_count := 0;  // Reset counter after toggle
+                    tick_count := 0;
                 }
             }
 
             state reporting {
-                doc "Sending status update"
+                doc /*"Sending status update"*/
                 do action report_status {
                     // Send system_ok and led_state to other actors
                 }
             }
 
-            // Transitions with guards
-            transition idle to checking
-                doc "Begin health check cycle";
+            doc /* Begin health check cycle */
+            transition first idle then checking;
 
-            transition checking to toggling
-                when tick_count >= led_toggle_interval_cycles
-                doc "Toggle LED after 10 cycles (1 second)";
+            doc /* Toggle LED after 10 cycles (1 second) */
+            transition first checking if tick_count >= led_toggle_interval_cycles then toggling;
 
-            transition checking to reporting
-                doc "Continue to reporting if no toggle needed";
+            doc /* Continue to reporting if no toggle needed */
+            transition first checking then reporting;
 
-            transition toggling to reporting
-                doc "Report status after toggling LED";
+            doc /* Report status after toggling LED */
+            transition first toggling then reporting;
 
-            transition reporting to idle
-                doc "Return to idle state";
+            doc /* Return to idle state */
+            transition first reporting then idle;
         }
 
         // Requirements
-        require {
-            doc "Maintenance task must execute at 10Hz (100ms period)"
-            execution_period_ms == 100
+        requirement {
+            subject;
+            doc /* Maintenance task must execute at 10Hz (100ms period) */
+            require constraint {
+                execution_period_ms == 100
+            }
         }
 
-        require {
-            doc "LED must toggle every 1 second (10 cycles at 10Hz)"
-            led_toggle_interval_cycles == 10
+        requirement {
+            subject;
+            doc /* LED must toggle every 1 second (10 cycles at 10Hz) */
+            require constraint {
+                led_toggle_interval_cycles == 10
+            }
         }
 
-        require {
-            doc "Maximum execution time must not exceed 5ms"
-            max_execution_time_us <= 5000
+        requirement {
+            subject;
+            doc /* Maximum execution time must not exceed 5ms */
+            require constraint {
+                max_execution_time_us <= 5000
+            }
         }
     }
 }

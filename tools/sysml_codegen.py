@@ -212,20 +212,22 @@ def parse_sysml(content: str, filename: str) -> Package:
                 states = []
                 transitions = []
 
-                # Parse transitions first (handle optional when clause and doc)
+                # Parse transitions first (handle optional doc comment and if clause)
+                # Pattern: doc /* ... */ transition first X if Y then Z;
+                # Or: transition first X then Z;
                 for t in re.finditer(
-                    r'transition\s+(\w+)\s+to\s+(\w+)(?:\s+when\s+([^\n;]+))?(?:\s+doc\s+"([^"]+)")?;',
+                    r'(?:doc\s*/\*\s*([^*]+)\s*\*/\s*)?transition\s+(?:\w+\s+)?first\s+(\w+)(?:\s+if\s+([^\n]+?))?\s+then\s+(\w+)\s*;',
                     sm_body,
-                    re.MULTILINE,
+                    re.MULTILINE | re.DOTALL,
                 ):
-                    from_state = t.group(1)
-                    to_state = t.group(2)
+                    doc = t.group(1).strip() if t.group(1) else None
+                    from_state = t.group(2)
                     condition = t.group(3).strip() if t.group(3) else None
-                    doc = t.group(4) if t.group(4) else None
+                    to_state = t.group(4)
                     transitions.append(Transition(from_state, to_state, condition, doc))
 
                 # Remove transition lines from sm_body before parsing states
-                sm_body_no_transitions = re.sub(r'transition\s+\w+\s+to\s+\w+[^;]*;', '', sm_body)
+                sm_body_no_transitions = re.sub(r'(?:doc\s*/\*[^*]+\*/\s*)?transition[^;]+;', '', sm_body)
 
                 # Parse states with optional doc blocks and actions
                 for s in re.finditer(r'state\s+(\w+)\s*\{', sm_body_no_transitions):
@@ -238,9 +240,10 @@ def parse_sysml(content: str, filename: str) -> Package:
                     # Extract balanced braces for state body
                     state_body, _ = extract_balanced_braces(sm_body_no_transitions, s.end() - 1)
                     if state_body:
-                        doc_match = re.search(r'doc\s+"([^"]+)"', state_body)
+                        # Match doc /* "text" */
+                        doc_match = re.search(r'doc\s*/\*\s*"?([^*"]+)"?\s*\*/', state_body)
                         if doc_match:
-                            doc = doc_match.group(1)
+                            doc = doc_match.group(1).strip()
 
                         # Parse entry actions
                         for action in re.finditer(r'entry\s+action\s+(\w+)\s*\{([^}]+)\}', state_body, re.DOTALL):
