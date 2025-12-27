@@ -5,7 +5,9 @@ use std::process::Command;
 
 fn main() {
     // Select linker script based on feature flags
-    let memory_x_src = if cfg!(feature = "pico2") {
+    let memory_x_src = if cfg!(feature = "stm32u585") {
+        "data/linker/memory-stm32u585.x"
+    } else if cfg!(feature = "pico2") {
         "data/linker/memory-pico2.x"
     } else {
         "data/linker/memory-pico1.x"
@@ -20,6 +22,7 @@ fn main() {
     println!("cargo:rerun-if-changed=build.rs");
     println!("cargo:rerun-if-changed=data/linker/memory-pico1.x");
     println!("cargo:rerun-if-changed=data/linker/memory-pico2.x");
+    println!("cargo:rerun-if-changed=data/linker/memory-stm32u585.x");
     println!("cargo:rerun-if-changed=data/config/config.cue");
 
     // Export CUE config to JSON

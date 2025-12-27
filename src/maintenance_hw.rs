@@ -1,21 +1,21 @@
 //! Maintenance actor implementation with hardware integration
 
 use crate::generated::maintenance::{MaintenanceActor, MaintenanceActorState};
+use crate::hal::OutputPin;
 use crate::messages::MaintenanceMessage;
-use embassy_rp::gpio::Output;
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::channel::Channel;
 
-/// Specialized maintenance actor with hardware resources
-pub struct MaintenanceActorHw {
+/// Specialized maintenance actor with hardware resources (platform-agnostic)
+pub struct MaintenanceActorHw<O: OutputPin> {
     pub actor: MaintenanceActor,
-    pub led: Output<'static>,
+    pub led: O,
     pub to_control: &'static Channel<CriticalSectionRawMutex, MaintenanceMessage, 2>,
 }
 
-impl MaintenanceActorHw {
+impl<O: OutputPin> MaintenanceActorHw<O> {
     pub fn new(
-        led: Output<'static>,
+        led: O,
         to_control: &'static Channel<CriticalSectionRawMutex, MaintenanceMessage, 2>,
     ) -> Self {
         Self {

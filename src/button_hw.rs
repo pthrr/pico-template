@@ -1,21 +1,21 @@
 //! Button actor implementation with hardware integration
 
 use crate::generated::button::{ButtonActor, ButtonActorState};
+use crate::hal::InputPin;
 use crate::messages::ButtonMessage;
-use embassy_rp::gpio::Input;
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::channel::Channel;
 
-/// Specialized button actor with hardware resources
-pub struct ButtonActorHw {
+/// Specialized button actor with hardware resources (platform-agnostic)
+pub struct ButtonActorHw<I: InputPin> {
     pub actor: ButtonActor,
-    pub button_pin: Input<'static>,
+    pub button_pin: I,
     pub to_control: &'static Channel<CriticalSectionRawMutex, ButtonMessage, 4>,
 }
 
-impl ButtonActorHw {
+impl<I: InputPin> ButtonActorHw<I> {
     pub fn new(
-        button_pin: Input<'static>,
+        button_pin: I,
         to_control: &'static Channel<CriticalSectionRawMutex, ButtonMessage, 4>,
     ) -> Self {
         Self {

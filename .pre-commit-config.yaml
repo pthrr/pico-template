@@ -17,13 +17,15 @@ repos:
     rev: v5.0.0
     hooks:
       - id: trailing-whitespace
-        exclude: ^(src/generated/|model/tla/)
+        exclude: ^(src/generated/|model/tla/|external/)
       - id: end-of-file-fixer
-        exclude: ^(src/generated/|model/tla/)
+        exclude: ^(src/generated/|model/tla/|external/)
       - id: mixed-line-ending
-        exclude: ^(src/generated/|model/tla/)
+        exclude: ^(src/generated/|model/tla/|external/)
       - id: check-yaml
+        exclude: ^external/
       - id: check-toml
+        exclude: ^external/
 
   - repo: local
     hooks:
@@ -32,7 +34,7 @@ repos:
         entry: cargo fmt --all
         language: system
         types: [rust]
-        exclude: ^src/generated/
+        exclude: ^(src/generated/|external/)
         pass_filenames: false
 
       - id: clippy
@@ -40,6 +42,6 @@ repos:
         entry: bash -c 'cargo clippy --lib --features pico1 -- -D warnings && cargo clippy --bin pico-template --features pico1 -- -D warnings && cargo clippy --lib --features pico2 -- -D warnings && cargo clippy --bin pico-template --features pico2 -- -D warnings'
         language: system
         types: [rust]
-        exclude: ^src/generated/
+        exclude: ^(src/generated/|external/)
         pass_filenames: false
         files: ^src/(?!generated/).*\.rs$

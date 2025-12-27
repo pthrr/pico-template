@@ -1,6 +1,7 @@
 [build]
-target = "thumbv6m-none-eabi"
+target = "thumbv6m-none-eabi"  # Default to Pico 1
 
+# RP2040 (Pico 1) - Cortex-M0+
 [target.thumbv6m-none-eabi]
 runner = "probe-rs run --chip RP2040"
 rustflags = [
@@ -9,6 +10,9 @@ rustflags = [
   "-C", "link-arg=-Tdefmt.x",
 ]
 
+# RP2350 (Pico 2) & STM32U585 - Both use Cortex-M33
+# Note: For STM32U585, use: cargo build --features stm32u585 --target thumbv8m.main-none-eabihf
+# Runner will be: probe-rs run --chip STM32U585AIIx (configure probe-rs chip via CLI)
 [target.thumbv8m.main-none-eabihf]
 runner = "probe-rs run --chip RP2350"
 rustflags = [
