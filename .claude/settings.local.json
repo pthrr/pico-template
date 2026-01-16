@@ -1,13 +1,14 @@
 {
   "permissions": {
     "allow": [
-      "Bash(cargo:*)",
-      "Bash(task:*)",
-      "Bash(cat:*)",
-      "Bash(tree:*)",
-      "Bash(find:*)",
-    ],
-    "deny": [],
-    "ask": []
+      "Bash(cargo build:*)",
+      "Bash(probe-rs list:*)",
+      "Bash(probe-rs chip:*)",
+      "Bash(probe-rs info:*)",
+      "Bash(lsusb:*)",
+      "Bash(dfu-util:*)",
+      "Bash(task --list:*)",
+      "Bash(nix develop:*)"
+    ]
   }
 }

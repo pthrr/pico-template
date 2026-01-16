@@ -31,7 +31,7 @@ repos:
     hooks:
       - id: rustfmt
         name: rustfmt
-        entry: cargo fmt --all
+        entry: cargo fmt
         language: system
         types: [rust]
         exclude: ^(src/generated/|external/)

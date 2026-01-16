@@ -38,6 +38,15 @@ platform: {
 		button_release_delay_ms:   50
 		control_log_interval:      1000
 	}
+	uno_q: platform & {
+		led_pin:                   11 // PH11 (LED 3 Green, active-low)
+		button_pin:                0  // No user button on UNO Q
+		control_period_ms:         1
+		maintenance_period_ms:     100
+		button_debounce_ms:        10
+		button_release_delay_ms:   50
+		control_log_interval:      1000
+	}
 }
 
-selected: #Platform.pico1
+selected: #Platform.uno_q

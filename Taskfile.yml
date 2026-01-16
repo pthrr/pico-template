@@ -43,6 +43,50 @@ tasks:
     cmds:
       - cargo build --release --target thumbv8m.main-none-eabihf --features pico2
 
+  build_unoq:
+    desc: Build firmware for Arduino UNO Q (STM32U585)
+    cmds:
+      - cargo build --release --no-default-features --features uno_q --target thumbv8m.main-none-eabihf
+    sources:
+      - src/**/*.rs
+      - Cargo.toml
+    generates:
+      - target/thumbv8m.main-none-eabihf/release/pico-template
+
+  flash_unoq:
+    desc: Build and flash firmware to Arduino UNO Q
+    deps: [build_unoq]
+    vars:
+      ARDUINO_DIR: "{{.HOME}}/.arduino15/packages/arduino"
+      REMOTEOCD: "{{.ARDUINO_DIR}}/tools/remoteocd/0.0.4-rc.4/remoteocd"
+      ADB: "{{.ARDUINO_DIR}}/tools/adb/32.0.0/adb"
+      BINARY: "target/thumbv8m.main-none-eabihf/release/pico-template"
+    cmds:
+      - |
+        # Convert ELF to bin
+        arm-none-eabi-objcopy -O binary {{.BINARY}} {{.BINARY}}.bin
+        # Get board serial from arduino-cli (Arduino UNO Q has VID 0x2341, PID 0x0078)
+        SERIAL=$(arduino-cli board list --format json | jq -r '.[] | select(.matching_boards[]?.fqbn == "arduino:zephyr:unoq") | .port.properties.serialNumber // empty')
+        if [ -z "$SERIAL" ]; then
+          # Fallback: find by VID/PID
+          SERIAL=$(arduino-cli board list --format json | jq -r '.[] | select(.port.properties.vid == "0x2341" and .port.properties.pid == "0x0078") | .port.properties.serialNumber // empty')
+        fi
+        if [ -z "$SERIAL" ]; then
+          echo "Error: Arduino UNO Q not found. Is it connected?"
+          exit 1
+        fi
+        echo "Flashing to Arduino UNO Q (serial: $SERIAL)"
+        {{.REMOTEOCD}} upload \
+          --adb-path {{.ADB}} \
+          -s "$SERIAL" \
+          -f data/flash/unoq.cfg \
+          {{.BINARY}}.bin
+
+  setup_unoq:
+    desc: Install Arduino Zephyr core (required once for UNO Q flashing)
+    cmds:
+      - arduino-cli core install arduino:zephyr
+
   clean:
     cmds:
       - cargo clean

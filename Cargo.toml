@@ -54,6 +54,7 @@ default = ["pico1"]
 pico1 = ["embassy-rp", "rp2040-boot2"]
 pico2 = ["embassy-rp", "rp2040-boot2"]
 stm32u585 = ["embassy-stm32"]
+uno_q = ["embassy-stm32"]
 usb = ["embassy-usb"]
 
 [[bin]]

@@ -34,6 +34,9 @@
             elf2uf2-rs
             flip-link
             picotool
+            arduino-cli
+            gcc-arm-embedded  # for arm-none-eabi-objcopy
+            jq                # for JSON parsing in tasks
 
             uv
             ruff
@@ -45,6 +48,10 @@
 
           shellHook = ''
             echo "Rust toolchain: ${rustToolchain.name}"
+            # Check if Arduino Zephyr core is installed for UNO Q support
+            if [ ! -d "$HOME/.arduino15/packages/arduino/hardware/zephyr" ]; then
+              echo "Note: Run 'task setup_unoq' to install Arduino Zephyr core for UNO Q flashing"
+            fi
           '';
 
           RUST_BACKTRACE = "1";

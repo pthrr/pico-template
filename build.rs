@@ -5,7 +5,7 @@ use std::process::Command;
 
 fn main() {
     // Select linker script based on feature flags
-    let memory_x_src = if cfg!(feature = "stm32u585") {
+    let memory_x_src = if cfg!(feature = "stm32u585") || cfg!(feature = "uno_q") {
         "data/linker/memory-stm32u585.x"
     } else if cfg!(feature = "pico2") {
         "data/linker/memory-pico2.x"

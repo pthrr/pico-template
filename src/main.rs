@@ -17,3 +17,7 @@ pub mod main_rp2040;
 #[cfg(feature = "stm32u585")]
 #[path = "main_stm32.rs"]
 pub mod main_stm32;
+
+#[cfg(feature = "uno_q")]
+#[path = "main_uno_q.rs"]
+pub mod main_uno_q;
