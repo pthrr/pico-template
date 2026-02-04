@@ -14,7 +14,7 @@ embassy-rp = { version = "0.2", features = ["time-driver"], optional = true }
 rp2040-boot2 = { version = "0.3", optional = true }
 
 # STM32 specific dependencies
-embassy-stm32 = { version = "0.1", features = ["stm32u585ai", "time-driver-any", "exti"], optional = true }
+embassy-stm32 = { version = "0.5", features = ["stm32u585ai", "time-driver-any", "exti"], optional = true }
 
 # Optional USB support
 embassy-usb = { version = "0.3", optional = true }
