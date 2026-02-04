@@ -39,7 +39,7 @@ static_cell = "2.1"
 postcard = { version = "1.0", default-features = false }
 
 [dev-dependencies]
-defmt-test = "0.3"
+defmt-test = "0.4"
 
 [[test]]
 name = "integration"
