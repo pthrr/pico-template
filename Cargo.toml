@@ -17,7 +17,7 @@ rp2040-boot2 = { version = "0.3", optional = true }
 embassy-stm32 = { version = "0.5", features = ["stm32u585ai", "time-driver-any", "exti"], optional = true }
 
 # Optional USB support
-embassy-usb = { version = "0.3", optional = true }
+embassy-usb = { version = "0.5", optional = true }
 
 embedded-hal = "1.0"
 embedded-hal-async = "1.0"
