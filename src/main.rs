@@ -14,10 +14,6 @@ use {defmt_rtt as _, panic_probe as _};
 #[path = "main_rp2040.rs"]
 pub mod main_rp2040;
 
-#[cfg(feature = "stm32u585")]
-#[path = "main_stm32.rs"]
-pub mod main_stm32;
-
-#[cfg(feature = "uno_q")]
-#[path = "main_uno_q.rs"]
-pub mod main_uno_q;
+#[cfg(feature = "unoq")]
+#[path = "main_unoq.rs"]
+pub mod main_unoq;

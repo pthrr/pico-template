@@ -5,12 +5,12 @@ edition = "2024"
 
 [dependencies]
 base = { path = "external/base", default-features = false }
-embassy-executor = { version = "0.9", features = ["arch-cortex-m", "executor-thread", "integrated-timers"] }
+embassy-executor = { version = "0.9", features = ["arch-cortex-m", "executor-thread"] }
 embassy-time = { version = "0.5" }
 embassy-sync = { version = "0.7" }
 
 # RP2040 specific dependencies
-embassy-rp = { version = "0.9", features = ["time-driver"], optional = true }
+embassy-rp = { version = "0.9", optional = true }
 rp2040-boot2 = { version = "0.3", optional = true }
 
 # STM32 specific dependencies
@@ -47,14 +47,12 @@ harness = false
 
 [build-dependencies]
 serde_json = "1.0"
-flip-link = "0.1"
 
 [features]
 default = ["pico1"]
-pico1 = ["embassy-rp", "rp2040-boot2"]
-pico2 = ["embassy-rp", "rp2040-boot2"]
-stm32u585 = ["embassy-stm32"]
-uno_q = ["embassy-stm32"]
+pico1 = ["embassy-rp", "embassy-rp/rp2040", "embassy-rp/time-driver", "rp2040-boot2"]
+pico2 = ["embassy-rp", "embassy-rp/rp235xa", "embassy-rp/time-driver", "rp2040-boot2"]
+unoq = ["embassy-stm32"]
 usb = ["embassy-usb"]
 
 [[bin]]

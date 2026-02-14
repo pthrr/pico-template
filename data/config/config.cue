@@ -29,16 +29,7 @@ platform: {
 		button_release_delay_ms:   50
 		control_log_interval:      1000
 	}
-	stm32u585: platform & {
-		led_pin:                   7  // PC7 on NUCLEO-U585AI-Q
-		button_pin:                13 // PC13 on NUCLEO-U585AI-Q
-		control_period_ms:         1
-		maintenance_period_ms:     100
-		button_debounce_ms:        10
-		button_release_delay_ms:   50
-		control_log_interval:      1000
-	}
-	uno_q: platform & {
+	unoq: platform & {
 		led_pin:                   11 // PH11 (LED 3 Green, active-low)
 		button_pin:                0  // No user button on UNO Q
 		control_period_ms:         1
@@ -49,4 +40,4 @@ platform: {
 	}
 }
 
-selected: #Platform.uno_q
+selected: #Platform.unoq

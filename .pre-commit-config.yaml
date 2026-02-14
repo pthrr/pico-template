@@ -39,7 +39,7 @@ repos:
 
       - id: clippy
         name: clippy
-        entry: bash -c 'cargo clippy --lib --features pico1 -- -D warnings && cargo clippy --bin pico-template --features pico1 -- -D warnings && cargo clippy --lib --features pico2 -- -D warnings && cargo clippy --bin pico-template --features pico2 -- -D warnings'
+        entry: bash -c 'cargo clippy --lib --no-default-features --features pico1 -- -D warnings && cargo clippy --bin pico-template --no-default-features --features pico1 -- -D warnings && cargo clippy --lib --no-default-features --features pico2 --target thumbv8m.main-none-eabihf -- -D warnings && cargo clippy --bin pico-template --no-default-features --features pico2 --target thumbv8m.main-none-eabihf -- -D warnings && cargo clippy --lib --no-default-features --features unoq --target thumbv8m.main-none-eabihf -- -D warnings && cargo clippy --bin pico-template --no-default-features --features unoq --target thumbv8m.main-none-eabihf -- -D warnings'
         language: system
         types: [rust]
         exclude: ^(src/generated/|external/)

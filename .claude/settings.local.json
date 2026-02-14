@@ -8,7 +8,14 @@
       "Bash(lsusb:*)",
       "Bash(dfu-util:*)",
       "Bash(task --list:*)",
-      "Bash(nix develop:*)"
+      "Bash(nix develop:*)",
+      "Bash(cargo search:*)",
+      "WebSearch",
+      "Bash(rustup target list:*)",
+      "Bash(rustup target add:*)",
+      "Bash(task test:*)",
+      "Bash(rustc:*)",
+      "Bash(cargo --version:*)"
     ]
   }
 }

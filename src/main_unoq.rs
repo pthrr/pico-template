@@ -3,11 +3,10 @@
 
 use embassy_executor::Spawner;
 use embassy_stm32::gpio::{Level, Output, Speed};
-use embassy_stm32::peripherals::PH11;
 use embassy_time::{Duration, Timer};
 
 #[embassy_executor::task]
-async fn blink_task(mut led: Output<'static, PH11>) {
+async fn blink_task(mut led: Output<'static>) {
     loop {
         // LED is active-low: LOW = on, HIGH = off
         led.set_low();

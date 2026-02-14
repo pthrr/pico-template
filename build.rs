@@ -5,7 +5,7 @@ use std::process::Command;
 
 fn main() {
     // Select linker script based on feature flags
-    let memory_x_src = if cfg!(feature = "stm32u585") || cfg!(feature = "uno_q") {
+    let memory_x_src = if cfg!(feature = "unoq") {
         "data/linker/memory-stm32u585.x"
     } else if cfg!(feature = "pico2") {
         "data/linker/memory-pico2.x"
@@ -42,12 +42,11 @@ fn main() {
     let config: serde_json::Value = serde_json::from_str(&json_str).expect("Failed to parse JSON");
 
     // Write JSON to output directory
-    let out_dir = env::var("OUT_DIR").unwrap();
-    let json_path = Path::new(&out_dir).join("config.json");
+    let json_path = out_dir_path.join("config.json");
     fs::write(&json_path, &output.stdout).expect("Failed to write config.json");
 
     // Generate Rust constants from JSON
-    let config_rs_path = Path::new(&out_dir).join("config.rs");
+    let config_rs_path = out_dir_path.join("config.rs");
     let mut config_code = String::from("// Auto-generated from CUE config\n\n");
 
     if let Some(obj) = config.as_object() {

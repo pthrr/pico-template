@@ -32,9 +32,9 @@ impl<'d> InputPin for embassy_rp::gpio::Input<'d> {
     }
 }
 
-// STM32 implementations
-#[cfg(feature = "stm32u585")]
-impl<P: embassy_stm32::gpio::Pin> OutputPin for embassy_stm32::gpio::Output<'_, P> {
+// STM32 implementations (Arduino UNO Q)
+#[cfg(feature = "unoq")]
+impl OutputPin for embassy_stm32::gpio::Output<'_> {
     fn set_high(&mut self) {
         embassy_stm32::gpio::Output::set_high(self);
     }
@@ -43,8 +43,8 @@ impl<P: embassy_stm32::gpio::Pin> OutputPin for embassy_stm32::gpio::Output<'_, 
     }
 }
 
-#[cfg(feature = "stm32u585")]
-impl<P: embassy_stm32::gpio::Pin> InputPin for embassy_stm32::gpio::Input<'_, P> {
+#[cfg(feature = "unoq")]
+impl InputPin for embassy_stm32::gpio::Input<'_> {
     fn is_low(&self) -> bool {
         embassy_stm32::gpio::Input::is_low(self)
     }

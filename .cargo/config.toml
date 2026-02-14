@@ -1,22 +1,61 @@
 [build]
 target = "thumbv6m-none-eabi"  # Default to Pico 1
+rustflags = [
+    # Treat all warnings as errors
+    "-D", "warnings",
+    # Rust compiler warnings - deny all
+    "-D", "rust_2018_idioms",
+    "-D", "trivial_casts",
+    "-D", "trivial_numeric_casts",
+    "-D", "unused_lifetimes",
+    "-D", "unused_qualifications",
+    # Clippy pedantic (-Wextra equivalent)
+    "-W", "clippy::pedantic",
+    # Deny - strict errors
+    "-D", "clippy::similar_names",
+    "-D", "clippy::semicolon_if_nothing_returned",
+    "-D", "clippy::unwrap_used",
+    "-D", "clippy::indexing_slicing",
+    "-D", "unused_must_use",
+    "-D", "unused_results",
+    "-D", "clippy::unwrap_in_result",
+    "-D", "clippy::fallible_impl_from",
+    "-D", "clippy::shadow_reuse",
+    "-D", "clippy::shadow_unrelated",
+    "-D", "clippy::shadow_same",
+    "-D", "clippy::missing_const_for_fn",
+    "-D", "clippy::borrow_interior_mutable_const",
+    "-D", "clippy::declare_interior_mutable_const",
+    "-D", "clippy::cloned_instead_of_copied",
+    "-D", "clippy::trivially_copy_pass_by_ref",
+    "-D", "clippy::disallowed_methods",
+    "-D", "clippy::cast_lossless",
+    "-D", "clippy::match_wildcard_for_single_variants",
+    # Warn - visible but not blocking
+    "-W", "clippy::cast_possible_truncation",
+    "-A", "unused_macros",
+    # Allow - suppress noisy lints
+    "-A", "clippy::redundant_closure_call",
+    "-A", "clippy::needless_return",
+    "-A", "clippy::single_match",
+    "-A", "clippy::must_use_candidate",
+    "-A", "clippy::missing_errors_doc",
+    "-A", "clippy::missing_panics_doc",
+]
 
 # RP2040 (Pico 1) - Cortex-M0+
 [target.thumbv6m-none-eabi]
 runner = "probe-rs run --chip RP2040"
 rustflags = [
-  "-C", "linker=flip-link",
   "-C", "link-arg=-Tlink.x",
   "-C", "link-arg=-Tdefmt.x",
 ]
 
-# RP2350 (Pico 2) & STM32U585 - Both use Cortex-M33
-# Note: For STM32U585, use: cargo build --features stm32u585 --target thumbv8m.main-none-eabihf
-# Runner will be: probe-rs run --chip STM32U585AIIx (configure probe-rs chip via CLI)
+# RP2350 (Pico 2) & STM32U585 (Arduino UNO Q) - Both use Cortex-M33
+# For UNO Q override the runner: cargo run --target thumbv8m.main-none-eabihf -- --chip STM32U585AIIx
 [target.thumbv8m.main-none-eabihf]
 runner = "probe-rs run --chip RP2350"
 rustflags = [
-  "-C", "linker=flip-link",
   "-C", "link-arg=-Tlink.x",
   "-C", "link-arg=-Tdefmt.x",
 ]

@@ -46,7 +46,7 @@ tasks:
   build_unoq:
     desc: Build firmware for Arduino UNO Q (STM32U585)
     cmds:
-      - cargo build --release --no-default-features --features uno_q --target thumbv8m.main-none-eabihf
+      - cargo build --release --no-default-features --features unoq --target thumbv8m.main-none-eabihf
     sources:
       - src/**/*.rs
       - Cargo.toml
