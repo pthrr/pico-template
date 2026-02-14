@@ -15,7 +15,11 @@
       "Bash(rustup target add:*)",
       "Bash(task test:*)",
       "Bash(rustc:*)",
-      "Bash(cargo --version:*)"
+      "Bash(cargo --version:*)",
+      "WebFetch(domain:crates.io)",
+      "WebFetch(domain:docs.rs)",
+      "Bash(cargo check:*)",
+      "Bash(cargo tree:*)"
     ]
   }
 }

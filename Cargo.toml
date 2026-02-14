@@ -19,6 +19,14 @@ embassy-stm32 = { version = "0.5", features = ["stm32u585ai", "time-driver-any",
 # Optional USB support
 embassy-usb = { version = "0.5", optional = true }
 
+# Optional display support (ratatui on SPI LCD)
+ratatui = { version = "0.30", default-features = false, features = ["all-widgets", "portable-atomic"], optional = true }
+mousefood = { version = "0.4", default-features = false, features = ["fonts"], optional = true }
+embedded-graphics = { version = "0.8", optional = true }
+mipidsi = { version = "0.9", optional = true }
+embedded-alloc = { version = "0.7", optional = true }
+embedded-hal-bus = { version = "0.3", features = ["defmt-03"], optional = true }
+
 embedded-hal = "1.0"
 embedded-hal-async = "1.0"
 
@@ -54,6 +62,9 @@ pico1 = ["embassy-rp", "embassy-rp/rp2040", "embassy-rp/time-driver", "rp2040-bo
 pico2 = ["embassy-rp", "embassy-rp/rp235xa", "embassy-rp/time-driver", "rp2040-boot2"]
 unoq = ["embassy-stm32"]
 usb = ["embassy-usb"]
+display = ["ratatui", "mousefood", "embedded-graphics", "mipidsi", "embedded-alloc", "embedded-hal-bus"]
+display-st7789 = ["display"]
+display-ili9341 = ["display"]
 
 [[bin]]
 name = "pico-template"

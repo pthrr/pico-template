@@ -19,3 +19,21 @@ pub struct MaintenanceMessage {
     /// Current tick count
     pub tick_count: i32,
 }
+
+/// Snapshot of system state for display rendering
+#[cfg(feature = "display")]
+#[derive(Debug, Clone, Copy, defmt::Format)]
+pub struct DisplayState {
+    /// Control loop cycle counter
+    pub control_cycle: i32,
+    /// Maintenance subsystem health
+    pub maintenance_ok: bool,
+    /// Current LED state
+    pub led_state: bool,
+    /// Maintenance tick counter
+    pub maintenance_tick: i32,
+    /// Button currently pressed
+    pub button_pressed: bool,
+    /// System uptime in seconds
+    pub uptime_secs: u32,
+}

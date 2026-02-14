@@ -14,10 +14,20 @@ use embassy_time::{Duration, Instant, Timer};
 pub async fn control_task(
     from_button: &'static Channel<CriticalSectionRawMutex, ButtonMessage, 4>,
     from_maintenance: &'static Channel<CriticalSectionRawMutex, MaintenanceMessage, 2>,
+    #[cfg(feature = "display")] to_display: &'static Channel<
+        CriticalSectionRawMutex,
+        crate::messages::DisplayState,
+        2,
+    >,
 ) {
     defmt::info!("Control actor starting - target 1kHz (1ms period)");
 
-    let mut actor = ControlActorHw::new(from_button, from_maintenance);
+    let mut actor = ControlActorHw::new(
+        from_button,
+        from_maintenance,
+        #[cfg(feature = "display")]
+        to_display,
+    );
 
     loop {
         let loop_start = Instant::now();
@@ -67,6 +77,38 @@ pub async fn button_task<I: InputPin>(
     loop {
         Timer::after(Duration::from_millis(BUTTON_DEBOUNCE_MS as u64)).await;
         actor.step();
+    }
+}
+
+/// Display task (~30Hz) - platform-agnostic
+///
+/// Receives `DisplayState` snapshots via channel and renders the
+/// dashboard to an SPI LCD using ratatui + mousefood.
+#[cfg(feature = "display")]
+pub async fn display_task<D>(
+    display: &mut D,
+    from_control: &'static Channel<CriticalSectionRawMutex, crate::messages::DisplayState, 2>,
+) where
+    D: embedded_graphics::prelude::DrawTarget<Color = embedded_graphics::pixelcolor::Rgb565>
+        + 'static,
+    D::Error: core::fmt::Debug,
+{
+    use crate::display_hw::DisplayActorHw;
+
+    defmt::info!("Display actor starting - ~30Hz refresh");
+
+    let mut actor = DisplayActorHw::new(display);
+
+    loop {
+        // Drain the channel, keeping only the latest state (latest-wins)
+        while let Ok(state) = from_control.try_receive() {
+            actor.update_state(state);
+        }
+
+        actor.render();
+
+        // ~30Hz = ~33ms period
+        Timer::after(Duration::from_millis(33)).await;
     }
 }
 
