@@ -7,8 +7,9 @@
  */
 
 MEMORY {
-    FLASH : ORIGIN = 0x08000000, LENGTH = 2048K
-    RAM   : ORIGIN = 0x20000000, LENGTH = 768K  /* SRAM1 + SRAM2 + SRAM3 combined */
+    FLASH   : ORIGIN = 0x08000000, LENGTH = 1024K
+    STAGING : ORIGIN = 0x08100000, LENGTH = 1024K
+    RAM     : ORIGIN = 0x20000000, LENGTH = 768K  /* SRAM1 + SRAM2 + SRAM3 combined */
 }
 
 /* Stack and heap configuration */

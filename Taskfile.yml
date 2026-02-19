@@ -33,15 +33,15 @@ tasks:
 
   test:
     cmds:
-      - cargo check --lib --features pico1
+      - cargo check --lib --no-default-features --features pico1
 
   build_pico1:
     cmds:
-      - cargo build --release --features pico1
+      - cargo build --release --no-default-features --features pico1
 
   build_pico2:
     cmds:
-      - cargo build --release --target thumbv8m.main-none-eabihf --features pico2
+      - cargo build --release --no-default-features --target thumbv8m.main-none-eabihf --features pico2
 
   build_unoq:
     desc: Build firmware for Arduino UNO Q (STM32U585)

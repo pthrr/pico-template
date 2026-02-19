@@ -3,8 +3,6 @@
 //! Only compiled when the `display` feature is enabled.
 //! Uses embedded-alloc's LlffHeap (Linked List First Fit).
 
-extern crate alloc;
-
 use embedded_alloc::LlffHeap;
 
 #[global_allocator]

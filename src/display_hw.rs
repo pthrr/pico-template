@@ -4,8 +4,6 @@
 //! Receives `DisplayState` snapshots via channel and renders
 //! the dashboard using ratatui + mousefood.
 
-extern crate alloc;
-
 use embedded_graphics::pixelcolor::Rgb565;
 use embedded_graphics::prelude::*;
 use mousefood::{EmbeddedBackend, EmbeddedBackendConfig};

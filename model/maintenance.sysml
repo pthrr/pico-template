@@ -25,9 +25,6 @@ package Maintenance {
         state machine {
             state idle {
                 doc /*"Waiting for next tick"*/
-                entry action reset_tick {
-                    tick_count := 0;
-                }
             }
 
             state checking {

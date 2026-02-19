@@ -53,7 +53,7 @@ pub async fn maintenance_task<O: OutputPin>(
     led: O,
     to_control: &'static Channel<CriticalSectionRawMutex, MaintenanceMessage, 2>,
 ) {
-    defmt::info!("Maintenance actor starting - 10Hz with 1s LED toggle");
+    defmt::info!("Maintenance actor starting - 10Hz with ~3s LED toggle");
 
     let mut actor = MaintenanceActorHw::new(led, to_control);
 
@@ -107,8 +107,49 @@ pub async fn display_task<D>(
 
         actor.render();
 
-        // ~30Hz = ~33ms period
-        Timer::after(Duration::from_millis(33)).await;
+        // ~30Hz refresh period from config
+        Timer::after(Duration::from_millis(DISPLAY_REFRESH_MS as u64)).await;
+    }
+}
+
+/// Bootloader task — reads protocol commands from a byte stream, dispatches
+/// to the bootloader actor, writes responses back.
+///
+/// `R` and `W` are the platform-specific read/write halves of the transport
+/// (USB CDC ACM on RP, UART on STM32).
+#[cfg(feature = "bootloader")]
+pub async fn bootloader_task<F, R, W>(flash: F, mut reader: R, mut writer: W)
+where
+    F: crate::bootloader::FlashStorage,
+    R: embedded_io_async::Read,
+    W: embedded_io_async::Write,
+{
+    use crate::bootloader::protocol::ProtocolParser;
+    use crate::bootloader_hw::BootloaderActorHw;
+
+    defmt::info!("Bootloader actor starting");
+
+    let mut actor = BootloaderActorHw::new(flash);
+    let mut parser = ProtocolParser::new();
+    let mut rx_buf = [0u8; 1];
+    let mut tx_buf = [0u8; 128];
+
+    loop {
+        match reader.read(&mut rx_buf).await {
+            Ok(0) | Err(_) => {
+                // Connection lost / EOF — wait and retry
+                Timer::after(Duration::from_millis(100)).await;
+                continue;
+            }
+            Ok(_) => {}
+        }
+
+        if let Some(cmd) = parser.feed(rx_buf[0]) {
+            let payload = parser.binary_payload();
+            let resp = actor.process_command(cmd, payload);
+            let len = resp.write_to(&mut tx_buf);
+            let _ = writer.write_all(&tx_buf[..len]).await;
+        }
     }
 }
 

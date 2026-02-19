@@ -3,6 +3,16 @@
 //! Provides a unified `LcdDisplay` type alias that wraps mipidsi's `Display`
 //! with feature-gated model selection (ST7789 or ILI9341).
 
+#[cfg(all(feature = "display-st7789", feature = "display-ili9341"))]
+compile_error!(
+    "Features `display-st7789` and `display-ili9341` are mutually exclusive. Enable only one."
+);
+
+#[cfg(not(any(feature = "display-st7789", feature = "display-ili9341")))]
+compile_error!(
+    "Feature `display` requires either `display-st7789` or `display-ili9341` to be enabled."
+);
+
 use embedded_graphics::pixelcolor::Rgb565;
 use embedded_graphics::prelude::*;
 use mipidsi::NoResetPin;

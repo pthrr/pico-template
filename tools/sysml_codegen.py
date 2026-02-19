@@ -514,20 +514,65 @@ def generate_rust_code(package: Package, output_dir: Path):
                             rust_expr = sysml_expr_to_rust(expr, part.attributes)
                             content.append(f'                self.{var_name} = {rust_expr};')
 
-                # Check transitions
+                # Check transitions (priority determined by model order;
+                # conditional transitions chained with if/else if)
                 state_transitions = [t for t in sm.transitions if t.from_state == state.name]
                 if state_transitions:
                     content.append('')
                     content.append('                // Transitions')
-                    for trans in state_transitions:
-                        to_variant = to_pascal_case(trans.to_state)
-                        if trans.condition:
+                    conditional = [t for t in state_transitions if t.condition]
+                    unconditional = [t for t in state_transitions if not t.condition]
+
+                    if conditional:
+                        first_cond = True
+                        for trans in conditional:
+                            to_variant = to_pascal_case(trans.to_state)
                             rust_condition = sysml_condition_to_rust(trans.condition, part.attributes)
-                            content.append(f'                if {rust_condition} {{')
+                            if first_cond:
+                                content.append(f'                if {rust_condition} {{')
+                                first_cond = False
+                            else:
+                                content.append(f'                }} else if {rust_condition} {{')
+                            # Emit entry actions of target state
+                            target_state = next((s for s in sm.states if s.name == trans.to_state), None)
+                            if target_state and target_state.entry_actions:
+                                for action in target_state.entry_actions:
+                                    content.append(
+                                        f'                    // Entry action for {to_pascal_case(trans.to_state)}: {action.name}'
+                                    )
+                                    for var_name, expr in parse_assignment(action.body):
+                                        rust_expr = sysml_expr_to_rust(expr, part.attributes)
+                                        content.append(f'                    self.{var_name} = {rust_expr};')
                             content.append(f'                    self.state = {part_name}State::{to_variant};')
-                            content.append('                }')
-                        else:
-                            # Unconditional transition
+                        if unconditional:
+                            # Unconditional as else clause when mixed with conditional
+                            content.append('                } else {')
+                            trans = unconditional[0]
+                            to_variant = to_pascal_case(trans.to_state)
+                            target_state = next((s for s in sm.states if s.name == trans.to_state), None)
+                            if target_state and target_state.entry_actions:
+                                for action in target_state.entry_actions:
+                                    content.append(
+                                        f'                    // Entry action for {to_pascal_case(trans.to_state)}: {action.name}'
+                                    )
+                                    for var_name, expr in parse_assignment(action.body):
+                                        rust_expr = sysml_expr_to_rust(expr, part.attributes)
+                                        content.append(f'                    self.{var_name} = {rust_expr};')
+                            content.append(f'                    self.state = {part_name}State::{to_variant};')
+                        content.append('                }')
+                    else:
+                        # Only unconditional transitions
+                        for trans in unconditional:
+                            to_variant = to_pascal_case(trans.to_state)
+                            target_state = next((s for s in sm.states if s.name == trans.to_state), None)
+                            if target_state and target_state.entry_actions:
+                                for action in target_state.entry_actions:
+                                    content.append(
+                                        f'                // Entry action for {to_pascal_case(trans.to_state)}: {action.name}'
+                                    )
+                                    for var_name, expr in parse_assignment(action.body):
+                                        rust_expr = sysml_expr_to_rust(expr, part.attributes)
+                                        content.append(f'                self.{var_name} = {rust_expr};')
                             content.append(f'                self.state = {part_name}State::{to_variant};')
 
                 content.append('            }')

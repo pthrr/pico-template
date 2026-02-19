@@ -14,7 +14,7 @@ fn main() {
     };
 
     // Copy selected memory.x to output directory
-    let out_dir = env::var("OUT_DIR").unwrap();
+    let out_dir = env::var("OUT_DIR").expect("OUT_DIR not set");
     let out_dir_path = Path::new(&out_dir);
     fs::copy(memory_x_src, out_dir_path.join("memory.x")).expect("Failed to copy memory.x");
 
@@ -25,9 +25,19 @@ fn main() {
     println!("cargo:rerun-if-changed=data/linker/memory-stm32u585.x");
     println!("cargo:rerun-if-changed=data/config/config.cue");
 
+    // Select CUE platform config based on Cargo feature
+    let platform = if cfg!(feature = "unoq") {
+        "unoq"
+    } else if cfg!(feature = "pico2") {
+        "pico2"
+    } else {
+        "pico1"
+    };
+    let cue_expr = format!("#Platform.{platform}");
+
     // Export CUE config to JSON
     let output = Command::new("cue")
-        .args(["export", "data/config/config.cue", "-e", "selected"])
+        .args(["export", "data/config/config.cue", "-e", &cue_expr])
         .output()
         .expect("Failed to execute cue");
 
@@ -38,12 +48,12 @@ fn main() {
         );
     }
 
-    let json_str = String::from_utf8(output.stdout.clone()).expect("Invalid UTF-8 from cue");
-    let config: serde_json::Value = serde_json::from_str(&json_str).expect("Failed to parse JSON");
-
     // Write JSON to output directory
     let json_path = out_dir_path.join("config.json");
     fs::write(&json_path, &output.stdout).expect("Failed to write config.json");
+
+    let json_str = String::from_utf8(output.stdout).expect("Invalid UTF-8 from cue");
+    let config: serde_json::Value = serde_json::from_str(&json_str).expect("Failed to parse JSON");
 
     // Generate Rust constants from JSON
     let config_rs_path = out_dir_path.join("config.rs");
@@ -98,7 +108,8 @@ fn main() {
                 }
                 serde_json::Value::Array(_) | serde_json::Value::Object(_) => {
                     // Serialize arrays and objects as JSON strings
-                    let json_str = serde_json::to_string(value).unwrap();
+                    let json_str =
+                        serde_json::to_string(value).expect("Failed to serialize JSON value");
                     config_code.push_str(&format!(
                         "pub const {}: &str = r#\"{}\"#;\n",
                         const_name, json_str

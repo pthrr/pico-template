@@ -13,10 +13,15 @@ pub struct ControlActorHw {
     #[cfg(feature = "display")]
     pub to_display: &'static Channel<CriticalSectionRawMutex, crate::messages::DisplayState, 2>,
     // Tracked state for display snapshots
+    #[cfg(feature = "display")]
     cycle_count: i32,
+    #[cfg(feature = "display")]
     last_maintenance_ok: bool,
+    #[cfg(feature = "display")]
     last_led_state: bool,
+    #[cfg(feature = "display")]
     last_maintenance_tick: i32,
+    #[cfg(feature = "display")]
     last_button_pressed: bool,
 }
 
@@ -36,10 +41,15 @@ impl ControlActorHw {
             from_maintenance,
             #[cfg(feature = "display")]
             to_display,
+            #[cfg(feature = "display")]
             cycle_count: 0,
+            #[cfg(feature = "display")]
             last_maintenance_ok: true,
+            #[cfg(feature = "display")]
             last_led_state: false,
+            #[cfg(feature = "display")]
             last_maintenance_tick: 0,
+            #[cfg(feature = "display")]
             last_button_pressed: false,
         }
     }
@@ -49,20 +59,29 @@ impl ControlActorHw {
         while let Ok(msg) = self.from_button.try_receive() {
             match msg {
                 ButtonMessage::Pressed => {
-                    self.last_button_pressed = true;
+                    #[cfg(feature = "display")]
+                    {
+                        self.last_button_pressed = true;
+                    }
                     defmt::info!("Control: Button pressed");
                 }
                 ButtonMessage::Released => {
-                    self.last_button_pressed = false;
+                    #[cfg(feature = "display")]
+                    {
+                        self.last_button_pressed = false;
+                    }
                     defmt::info!("Control: Button released");
                 }
             }
         }
 
         while let Ok(msg) = self.from_maintenance.try_receive() {
-            self.last_maintenance_ok = msg.system_ok;
-            self.last_led_state = msg.led_state;
-            self.last_maintenance_tick = msg.tick_count;
+            #[cfg(feature = "display")]
+            {
+                self.last_maintenance_ok = msg.system_ok;
+                self.last_led_state = msg.led_state;
+                self.last_maintenance_tick = msg.tick_count;
+            }
             defmt::debug!(
                 "Control: Maintenance status (ok={}, led={}, tick={})",
                 msg.system_ok,
@@ -73,7 +92,10 @@ impl ControlActorHw {
 
         // Execute state machine
         self.actor.step();
-        self.cycle_count = self.cycle_count.wrapping_add(1);
+        #[cfg(feature = "display")]
+        {
+            self.cycle_count = self.cycle_count.wrapping_add(1);
+        }
 
         // Emit display state snapshot (non-blocking, latest-wins)
         #[cfg(feature = "display")]

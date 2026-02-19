@@ -1,7 +1,5 @@
 //! Ratatui widget layout for the LCD dashboard
 
-extern crate alloc;
-
 use alloc::format;
 use alloc::vec;
 

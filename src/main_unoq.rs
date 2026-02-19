@@ -58,6 +58,47 @@ async fn display_task_unoq(
     pico_template::tasks::display_task(display, from_control).await
 }
 
+// Bootloader: UART transport task wrapper
+// Uses platform-specific UART API directly (same pattern as RP2040 USB CDC)
+#[cfg(feature = "bootloader")]
+#[embassy_executor::task]
+async fn bootloader_task_unoq(
+    flash: pico_template::bootloader::flash_stm32::Stm32Flash,
+    mut rx: embassy_stm32::usart::UartRx<'static, embassy_stm32::mode::Async>,
+    mut tx: embassy_stm32::usart::UartTx<'static, embassy_stm32::mode::Async>,
+) {
+    use pico_template::bootloader::protocol::ProtocolParser;
+    use pico_template::bootloader_hw::BootloaderActorHw;
+
+    defmt::info!("Bootloader actor starting (UART)");
+
+    let mut actor = BootloaderActorHw::new(flash);
+    let mut parser = ProtocolParser::new();
+    let mut rx_buf = [0u8; 1];
+    let mut tx_buf = [0u8; 128];
+
+    loop {
+        match rx.read(&mut rx_buf).await {
+            Ok(()) => {
+                if let Some(cmd) = parser.feed(rx_buf[0]) {
+                    let payload = parser.binary_payload();
+                    let resp = actor.process_command(cmd, payload);
+                    let len = resp.write_to(&mut tx_buf);
+                    let _ = tx.write(&tx_buf[..len]).await;
+                }
+            }
+            Err(_) => {
+                embassy_time::Timer::after(embassy_time::Duration::from_millis(100)).await;
+            }
+        }
+    }
+}
+
+#[cfg(feature = "bootloader")]
+embassy_stm32::bind_interrupts!(struct UartIrqs {
+    USART1 => embassy_stm32::usart::InterruptHandler<embassy_stm32::peripherals::USART1>;
+});
+
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
     defmt::info!("Arduino UNO Q: Initializing hardware");
@@ -103,7 +144,7 @@ async fn main(spawner: Spawner) {
         let mut delay = embassy_time::Delay;
 
         #[allow(clippy::cast_possible_truncation)]
-        let mipidsi_display = pico_template::display::init::init_display_stm32(
+        let mipidsi_display = pico_template::display::init::init_display(
             spi_dev,
             dc,
             rst,
@@ -120,5 +161,35 @@ async fn main(spawner: Spawner) {
         spawner
             .spawn(display_task_unoq(display_driver, &CONTROL_TO_DISPLAY))
             .expect("spawn display");
+    }
+
+    // Initialize and spawn bootloader task (UART transport)
+    #[cfg(feature = "bootloader")]
+    {
+        use embassy_stm32::usart;
+        use pico_template::config::BOOTLOADER_UART_BAUD;
+
+        let mut uart_config = usart::Config::default();
+        uart_config.baudrate = BOOTLOADER_UART_BAUD;
+
+        let uart = usart::Uart::new(
+            p.USART1,
+            p.PA10, // RX
+            p.PA9,  // TX
+            UartIrqs,
+            p.GPDMA1_CH0,
+            p.GPDMA1_CH1,
+            uart_config,
+        )
+        .expect("uart init");
+        let (tx, rx) = uart.split();
+
+        let flash = embassy_stm32::flash::Flash::new_blocking(p.FLASH);
+        let stm32_flash = pico_template::bootloader::flash_stm32::Stm32Flash::new(flash);
+
+        defmt::info!("UNO Q: Spawning bootloader task (UART)");
+        spawner
+            .spawn(bootloader_task_unoq(stm32_flash, rx, tx))
+            .expect("spawn bootloader");
     }
 }

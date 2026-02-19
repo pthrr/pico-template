@@ -2,8 +2,8 @@
 #![no_main]
 #![allow(static_mut_refs)]
 
-// Platform-specific boot loader
-#[cfg(any(feature = "pico1", feature = "pico2"))]
+// Platform-specific boot loader (RP2040 only; RP2350 uses internal boot ROM)
+#[cfg(feature = "pico1")]
 use rp2040_boot2 as _;
 
 // Common panic and debug support

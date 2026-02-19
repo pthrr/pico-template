@@ -11,6 +11,14 @@ use pico_template::messages::{ButtonMessage, MaintenanceMessage};
 use pico_template::tasks;
 use static_cell::StaticCell;
 
+#[cfg(feature = "bootloader-rp")]
+use embassy_rp::flash;
+
+#[cfg(feature = "bootloader-rp")]
+embassy_rp::bind_interrupts!(struct UsbIrqs {
+    USBCTRL_IRQ => embassy_rp::usb::InterruptHandler<embassy_rp::peripherals::USB>;
+});
+
 #[cfg(feature = "display")]
 use pico_template::messages::DisplayState;
 
@@ -62,6 +70,60 @@ async fn button_task_rp2040(
     to_control: &'static Channel<CriticalSectionRawMutex, ButtonMessage, 4>,
 ) {
     tasks::button_task(button, to_control).await
+}
+
+// Bootloader: USB CDC ACM task wrappers
+#[cfg(feature = "bootloader-rp")]
+#[embassy_executor::task]
+async fn usb_task_rp2040(
+    mut usb: embassy_usb::UsbDevice<
+        'static,
+        embassy_rp::usb::Driver<'static, embassy_rp::peripherals::USB>,
+    >,
+) {
+    usb.run().await;
+}
+
+#[cfg(feature = "bootloader-rp")]
+#[embassy_executor::task]
+async fn bootloader_task_rp2040(
+    flash: pico_template::bootloader::flash_rp::RpFlash,
+    mut reader: embassy_usb::class::cdc_acm::Receiver<
+        'static,
+        embassy_rp::usb::Driver<'static, embassy_rp::peripherals::USB>,
+    >,
+    mut writer: embassy_usb::class::cdc_acm::Sender<
+        'static,
+        embassy_rp::usb::Driver<'static, embassy_rp::peripherals::USB>,
+    >,
+) {
+    use pico_template::bootloader::protocol::ProtocolParser;
+    use pico_template::bootloader_hw::BootloaderActorHw;
+
+    defmt::info!("Bootloader actor starting (USB CDC)");
+
+    let mut actor = BootloaderActorHw::new(flash);
+    let mut parser = ProtocolParser::new();
+    let mut rx_buf = [0u8; 64];
+    let mut tx_buf = [0u8; 128];
+
+    loop {
+        match reader.read_packet(&mut rx_buf).await {
+            Ok(n) => {
+                for &byte in &rx_buf[..n] {
+                    if let Some(cmd) = parser.feed(byte) {
+                        let payload = parser.binary_payload();
+                        let resp = actor.process_command(cmd, payload);
+                        let len = resp.write_to(&mut tx_buf);
+                        let _ = writer.write_packet(&tx_buf[..len]).await;
+                    }
+                }
+            }
+            Err(_) => {
+                embassy_time::Timer::after(embassy_time::Duration::from_millis(100)).await;
+            }
+        }
+    }
 }
 
 #[cfg(feature = "display")]
@@ -143,14 +205,8 @@ async fn main(spawner: Spawner) {
         // Blocking delay for display init
         let mut delay = embassy_time::Delay;
 
-        type RpSpiDev = ExclusiveDevice<
-            Spi<'static, embassy_rp::peripherals::SPI0, embassy_rp::spi::Blocking>,
-            Output<'static>,
-            NoDelay,
-        >;
-
         #[allow(clippy::cast_possible_truncation)]
-        let mipidsi_display = pico_template::display::init::init_display_rp(
+        let mipidsi_display = pico_template::display::init::init_display(
             spi_dev,
             dc,
             rst,
@@ -163,6 +219,12 @@ async fn main(spawner: Spawner) {
         static DISPLAY: StaticCell<DisplayDriver<RpSpiDev, Output<'static>>> = StaticCell::new();
         DISPLAY.init(DisplayDriver::new(mipidsi_display))
     };
+
+    // Pass raw peripherals to Core 1 for bootloader (USB types are not Send)
+    #[cfg(feature = "bootloader-rp")]
+    let bl_usb_peripheral = p.USB;
+    #[cfg(feature = "bootloader-rp")]
+    let bl_flash_peripheral = p.FLASH;
 
     spawn_core1(p.CORE1, unsafe { &mut CORE1_STACK }, move || {
         let executor = EXECUTOR1.init(Executor::new());
@@ -181,6 +243,55 @@ async fn main(spawner: Spawner) {
                 spawner
                     .spawn(display_task_rp2040(display_driver, &CONTROL_TO_DISPLAY))
                     .expect("spawn display");
+            }
+
+            #[cfg(feature = "bootloader-rp")]
+            {
+                use embassy_rp::usb::Driver;
+                use embassy_usb::class::cdc_acm::{CdcAcmClass, State};
+
+                // Build USB device on Core 1 (USB types are not Send)
+                let driver = Driver::new(bl_usb_peripheral, UsbIrqs);
+
+                let mut config = embassy_usb::Config::new(0x2E8A, 0x000A);
+                config.manufacturer = Some("pico-template");
+                config.product = Some("Bootloader CDC");
+                config.serial_number = Some("BL001");
+                config.max_power = 100;
+                config.max_packet_size_0 = 64;
+
+                static CONFIG_DESC: StaticCell<[u8; 256]> = StaticCell::new();
+                static BOS_DESC: StaticCell<[u8; 256]> = StaticCell::new();
+                static MSOS_DESC: StaticCell<[u8; 256]> = StaticCell::new();
+                static CONTROL_BUF: StaticCell<[u8; 64]> = StaticCell::new();
+
+                let mut builder = embassy_usb::Builder::new(
+                    driver,
+                    config,
+                    CONFIG_DESC.init([0; 256]),
+                    BOS_DESC.init([0; 256]),
+                    MSOS_DESC.init([0; 256]),
+                    CONTROL_BUF.init([0; 64]),
+                );
+
+                static CDC_STATE: StaticCell<State> = StaticCell::new();
+                let cdc_state = CDC_STATE.init(State::new());
+                let cdc_class = CdcAcmClass::new(&mut builder, cdc_state, 64);
+                let (sender, receiver) = cdc_class.split();
+
+                let usb = builder.build();
+
+                // Flash for bootloader
+                let bl_flash = embassy_rp::flash::Flash::<_, flash::Blocking, { 2 * 1024 * 1024 }>::new_blocking(bl_flash_peripheral);
+                let rp_flash = pico_template::bootloader::flash_rp::RpFlash::new(bl_flash);
+
+                defmt::info!("Core 1: Spawning bootloader tasks (USB CDC)");
+                spawner
+                    .spawn(usb_task_rp2040(usb))
+                    .expect("spawn usb");
+                spawner
+                    .spawn(bootloader_task_rp2040(rp_flash, receiver, sender))
+                    .expect("spawn bootloader");
             }
         });
     });

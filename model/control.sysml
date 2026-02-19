@@ -32,7 +32,10 @@ package Control {
                     control_value := 0.0;
                     error_flag := false;
                 }
-
+                // Do action: count during init
+                do action count {
+                    cycle_count := cycle_count + 1;
+                }
             }
 
             state running {
@@ -76,21 +79,19 @@ package Control {
                 if cycle_count > 100
                 then running;
 
+            doc /* Enter error state on fault detection (highest priority) */
+            transition first running if error_flag then error;
+
             transition two
                 first running
                 if enabled
                 then processing;
-
-
 
             doc /* Output computed control value */
             transition first processing then outputting;
 
             doc /* Return to running state */
             transition first outputting then running;
-
-            doc /* Enter error state on fault detection */
-            transition first running if error_flag then error;
 
             doc /* Reset and reinitialize after error */
             transition first error then initializing;
