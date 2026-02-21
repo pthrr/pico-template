@@ -1,0 +1,15 @@
+[package]
+name = "sysml-codegen"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "sysml-codegen"
+path = "src/main.rs"
+
+[dependencies]
+vstd = { path = "../../external/verus/source/vstd" }
+
+[lints.rust]
+warnings = "deny"
+unused_qualifications = "allow"

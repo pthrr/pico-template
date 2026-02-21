@@ -16,9 +16,12 @@
 //!   ERR <msg>\n
 
 use crate::bootloader::FlashError;
+use vstd::prelude::*;
+
+verus! {
 
 /// Maximum header line length (before binary payload).
-const MAX_LINE_LEN: usize = 128;
+pub const MAX_LINE_LEN: usize = 128;
 
 /// Parsed command from the host.
 #[derive(Debug)]
@@ -114,7 +117,18 @@ pub struct ProtocolParser {
 }
 
 impl ProtocolParser {
-    pub fn new() -> Self {
+    /// Structural invariant: all indices stay within buffer bounds.
+    pub open spec fn inv(&self) -> bool {
+        self.line_pos <= MAX_LINE_LEN
+        && self.binary_pos <= 4096
+        && self.binary_remaining <= 4096
+    }
+}
+
+impl ProtocolParser {
+    pub fn new() -> (result: Self)
+        ensures result.inv(),
+    {
         Self {
             line_buf: [0u8; MAX_LINE_LEN],
             line_pos: 0,
@@ -128,7 +142,10 @@ impl ProtocolParser {
     }
 
     /// Feed a single byte. Returns `Some(Command)` when a complete command is parsed.
-    pub fn feed(&mut self, byte: u8) -> Option<Command> {
+    pub fn feed(&mut self, byte: u8) -> (result: Option<Command>)
+        requires old(self).inv(),
+        ensures self.inv(),
+    {
         // If we're collecting binary payload for a FLASH command
         if self.binary_remaining > 0 {
             if self.binary_pos < self.binary_buf.len() {
@@ -168,7 +185,10 @@ impl ProtocolParser {
     }
 
     /// Access the binary payload buffer (valid after a `Command::Flash` is returned).
-    pub fn binary_payload(&self) -> &[u8] {
+    pub fn binary_payload(&self) -> (result: &[u8])
+        requires self.inv(),
+        ensures result.len() <= 4096,
+    {
         &self.binary_buf[..self.binary_pos]
     }
 
@@ -265,8 +285,10 @@ impl<'a> ByteSplitter<'a> {
     }
 }
 
-/// Parse ASCII decimal bytes into u32.
-fn parse_u32(bytes: &[u8]) -> Option<u32> {
+/// Parse ASCII decimal bytes into u32. Uses checked arithmetic — never overflows.
+fn parse_u32(bytes: &[u8]) -> (result: Option<u32>)
+    ensures result.is_some() ==> bytes.len() > 0,
+{
     let mut result: u32 = 0;
     for &b in bytes {
         if b.is_ascii_digit() {
@@ -285,8 +307,10 @@ fn parse_u16(bytes: &[u8]) -> Option<u16> {
     u16::try_from(val).ok()
 }
 
-/// Copy a str into a byte buffer, returning bytes written.
-fn copy_str(buf: &mut [u8], s: &str) -> usize {
+/// Copy a str into a byte buffer, returning bytes written. Never exceeds buf.len().
+fn copy_str(buf: &mut [u8], s: &str) -> (result: usize)
+    ensures result <= buf.len() && result <= s.len(),
+{
     let bytes = s.as_bytes();
     let len = bytes.len().min(buf.len());
     buf[..len].copy_from_slice(&bytes[..len]);
@@ -294,7 +318,10 @@ fn copy_str(buf: &mut [u8], s: &str) -> usize {
 }
 
 /// Write a u32 as ASCII decimal into a buffer, returning bytes written.
-fn write_u32(buf: &mut [u8], val: u32) -> usize {
+/// At most 10 digits (u32::MAX = 4294967295). Never exceeds buf.len().
+fn write_u32(buf: &mut [u8], val: u32) -> (result: usize)
+    ensures result <= buf.len() && result <= 10,
+{
     if val == 0 {
         if !buf.is_empty() {
             buf[0] = b'0';
@@ -319,3 +346,5 @@ fn write_u32(buf: &mut [u8], val: u32) -> usize {
     }
     len
 }
+
+} // verus!

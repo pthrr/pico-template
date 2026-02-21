@@ -9,6 +9,9 @@ use crate::bootloader::{FlashError, FlashStorage};
 use crate::config::{BOOTLOADER_CHUNK_SIZE, BOOTLOADER_STAGING_SIZE};
 use crate::generated::bootloader::BootloaderActor;
 use crc::{CRC_16_IBM_3740, CRC_32_ISO_HDLC, Crc};
+use vstd::prelude::*;
+
+verus! {
 
 const CRC16: Crc<u16> = Crc::<u16>::new(&CRC_16_IBM_3740);
 const CRC32: Crc<u32> = Crc::<u32>::new(&CRC_32_ISO_HDLC);
@@ -137,7 +140,10 @@ impl<F: FlashStorage> BootloaderActorHw<F> {
     }
 
     /// Read back staged firmware and verify CRC32.
-    fn verify_staged_crc32(&mut self, total_size: u32, expected: u32) -> Result<(), FlashError> {
+    /// Reads in 256-byte chunks; offset never exceeds total_size.
+    fn verify_staged_crc32(&mut self, total_size: u32, expected: u32) -> (result: Result<(), FlashError>)
+        requires total_size <= BOOTLOADER_STAGING_SIZE,
+    {
         let mut digest = CRC32.digest();
         let mut read_buf = [0u8; 256];
         let mut offset: u32 = 0;
@@ -168,3 +174,5 @@ impl<F: FlashStorage> BootloaderActorHw<F> {
         }
     }
 }
+
+} // verus!

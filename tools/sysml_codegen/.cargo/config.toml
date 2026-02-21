@@ -1,0 +1,10 @@
+[build]
+target = "x86_64-unknown-linux-gnu"
+# Appended after parent rustflags — relax lints that vstd/verus_builtin trigger
+rustflags = [
+    "-A", "unused_qualifications",
+    "-A", "unused_results",
+    "-A", "trivial_casts",
+    "-A", "trivial_numeric_casts",
+    "-A", "unused_lifetimes",
+]

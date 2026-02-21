@@ -4,9 +4,12 @@ use crate::bootloader::{FlashError, FlashStorage};
 use crate::config::{BOOTLOADER_CHUNK_SIZE, BOOTLOADER_STAGING_OFFSET, BOOTLOADER_STAGING_SIZE};
 use embassy_rp::flash::{self, Flash};
 use embassy_rp::peripherals::FLASH;
+use vstd::prelude::*;
+
+verus! {
 
 /// RP flash erase page size (4 KB).
-const ERASE_SIZE: u32 = 4096;
+pub const ERASE_SIZE: u32 = 4096;
 
 /// RP platform flash storage backed by `embassy_rp::flash::Flash`.
 pub struct RpFlash {
@@ -39,7 +42,11 @@ impl FlashStorage for RpFlash {
         Ok(())
     }
 
-    fn write_chunk(&mut self, offset: u32, data: &[u8]) -> Result<(), FlashError> {
+    /// Write data to staging. Proves: abs_offset stays within staging region.
+    fn write_chunk(&mut self, offset: u32, data: &[u8]) -> (result: Result<(), FlashError>)
+        ensures result.is_ok() ==>
+            offset + data.len() as u32 <= BOOTLOADER_STAGING_SIZE,
+    {
         let abs_offset = BOOTLOADER_STAGING_OFFSET + offset;
 
         #[allow(clippy::cast_possible_truncation)]
@@ -52,7 +59,11 @@ impl FlashStorage for RpFlash {
             .map_err(|_| FlashError::WriteFailed)
     }
 
-    fn read_staging(&mut self, offset: u32, buf: &mut [u8]) -> Result<(), FlashError> {
+    /// Read from staging. Proves: abs_offset stays within staging region.
+    fn read_staging(&mut self, offset: u32, buf: &mut [u8]) -> (result: Result<(), FlashError>)
+        ensures result.is_ok() ==>
+            offset + buf.len() as u32 <= BOOTLOADER_STAGING_SIZE,
+    {
         let abs_offset = BOOTLOADER_STAGING_OFFSET + offset;
 
         #[allow(clippy::cast_possible_truncation)]
@@ -102,3 +113,5 @@ fn commit_from_ram() -> ! {
 
     cortex_m::peripheral::SCB::sys_reset()
 }
+
+} // verus!

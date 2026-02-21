@@ -1,0 +1,36 @@
+version: "3"
+
+vars:
+  VERUS_ROOT: "{{.HOME}}/opt/verus/source/target-verus/release"
+  VERUS_Z3_PATH: "{{.HOME}}/opt/verus/source/z3"
+  MODEL_DIR: "{{.ROOT_DIR}}/model"
+  OUTPUT_DIR: "{{.ROOT_DIR}}/src/generated"
+  TLA_DIR: "{{.ROOT_DIR}}/model/tla"
+
+tasks:
+  default:
+    silent: true
+    hidden: true
+    cmds:
+      - task --list-all
+
+  check:
+    desc: Type-check sysml_codegen with cargo nightly
+    dir: sysml_codegen
+    cmds:
+      - RUSTFLAGS="" cargo +nightly check --target x86_64-unknown-linux-gnu
+
+  verify:
+    desc: Run Verus verification on sysml_codegen
+    dir: sysml_codegen
+    cmds:
+      - VERUS_Z3_PATH={{.VERUS_Z3_PATH}} {{.VERUS_ROOT}}/verus --crate-type bin src/main.rs
+
+  generate:
+    desc: Generate Rust and TLA+ code from all SysML models
+    dir: sysml_codegen
+    cmds:
+      - RUSTFLAGS="" cargo +nightly run --target x86_64-unknown-linux-gnu -- --output-dir {{.OUTPUT_DIR}} --tla-dir {{.TLA_DIR}} {{.MODEL_DIR}}/*.sysml
+    sources:
+      - "{{.MODEL_DIR}}/*.sysml"
+      - src/*.rs

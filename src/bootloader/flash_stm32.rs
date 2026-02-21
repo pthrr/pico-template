@@ -3,9 +3,12 @@
 use crate::bootloader::{FlashError, FlashStorage};
 use crate::config::{BOOTLOADER_CHUNK_SIZE, BOOTLOADER_STAGING_OFFSET, BOOTLOADER_STAGING_SIZE};
 use embassy_stm32::flash::{self, Flash};
+use vstd::prelude::*;
+
+verus! {
 
 /// STM32U585 erase page size (8 KB).
-const ERASE_SIZE: u32 = 8192;
+pub const ERASE_SIZE: u32 = 8192;
 
 /// STM32 platform flash storage backed by `embassy_stm32::flash::Flash`.
 pub struct Stm32Flash {
@@ -33,7 +36,10 @@ impl FlashStorage for Stm32Flash {
         Ok(())
     }
 
-    fn write_chunk(&mut self, offset: u32, data: &[u8]) -> Result<(), FlashError> {
+    fn write_chunk(&mut self, offset: u32, data: &[u8]) -> (result: Result<(), FlashError>)
+        ensures result.is_ok() ==>
+            offset + data.len() as u32 <= BOOTLOADER_STAGING_SIZE,
+    {
         let abs_offset = BOOTLOADER_STAGING_OFFSET + offset;
 
         #[allow(clippy::cast_possible_truncation)]
@@ -46,7 +52,10 @@ impl FlashStorage for Stm32Flash {
             .map_err(|_| FlashError::WriteFailed)
     }
 
-    fn read_staging(&mut self, offset: u32, buf: &mut [u8]) -> Result<(), FlashError> {
+    fn read_staging(&mut self, offset: u32, buf: &mut [u8]) -> (result: Result<(), FlashError>)
+        ensures result.is_ok() ==>
+            offset + buf.len() as u32 <= BOOTLOADER_STAGING_SIZE,
+    {
         let abs_offset = BOOTLOADER_STAGING_OFFSET + offset;
 
         #[allow(clippy::cast_possible_truncation)]
@@ -80,3 +89,5 @@ fn commit_from_ram() -> ! {
 
     cortex_m::peripheral::SCB::sys_reset()
 }
+
+} // verus!

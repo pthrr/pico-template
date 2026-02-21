@@ -420,11 +420,9 @@ def generate_rust_code(package: Package, output_dir: Path):
                     rust_sig_type = f'[{rust_sig_type}; {sig.array_size}]'
 
                 if sig.direction == 'out':
-                    # Output signals: both get and set
                     content.append(f'    fn get_{sig.name}(&self) -> {rust_sig_type};')
                     content.append(f'    fn set_{sig.name}(&mut self, value: {rust_sig_type});')
                 else:  # 'in'
-                    # Input signals: only get (read-only)
                     content.append(f'    fn get_{sig.name}(&self) -> {rust_sig_type};')
 
             content.append('}')

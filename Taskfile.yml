@@ -1,5 +1,10 @@
 version: "3"
 
+includes:
+  codegen:
+    taskfile: tools/Taskfile.yml
+    dir: tools
+
 tasks:
   default:
     silent: true
@@ -12,13 +17,6 @@ tasks:
       - cue export data/config/config.cue --out json
     sources:
       - data/config/config.cue
-
-  gen_code:
-    cmds:
-      - python3 tools/sysml_codegen.py model/*.sysml --output-dir=src/generated
-    sources:
-      - model/*.sysml
-      - tools/sysml_codegen.py
 
   verify_tla:
     cmds:

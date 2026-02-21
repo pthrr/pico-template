@@ -23,7 +23,11 @@
       "Bash(wc:*)",
       "WebFetch(domain:docs.embassy.dev)",
       "WebFetch(domain:github.com)",
-      "Bash(cue export:*)"
+      "Bash(cue export:*)",
+      "Bash(cargo +nightly check:*)",
+      "Bash(grep:*)",
+      "Bash(task codegen:verify:*)",
+      "Bash(tlc:*)"
     ]
   }
 }

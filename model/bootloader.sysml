@@ -3,8 +3,71 @@
 package Bootloader {
     private import ScalarValues::*;
 
+    action def reset_state {
+        bytes_received := 0;
+        chunks_written := 0;
+        total_size := 0;
+        error_code := 0;
+        error_flag := false;
+    }
+
+    action def clear_erase {
+        erase_requested := false;
+        erase_complete := false;
+    }
+
+    action def clear_receive {
+        chunk_ready := false;
+        chunk_written := false;
+    }
+
+    action def clear_verify {
+        commit_requested := false;
+        verify_ok := false;
+    }
+
+    action def count_chunk {
+        chunks_written := chunks_written + 1;
+    }
+
+    state def Idle {
+        doc /*"Waiting for bootloader activation"*/
+        entry action : reset_state;
+    }
+
+    state def Connected {
+        doc /*"Connection established, awaiting erase command"*/
+    }
+
+    state def Erasing {
+        doc /*"Erasing staging flash area"*/
+        entry action : clear_erase;
+    }
+
+    state def Erased {
+        doc /*"Erase complete, awaiting data transfer or commit"*/
+        entry action : clear_receive;
+    }
+
+    state def Receiving {
+        doc /*"Writing firmware chunk to staging"*/
+        do action : count_chunk;
+    }
+
+    state def Verifying {
+        doc /*"Verifying firmware integrity"*/
+        entry action : clear_verify;
+    }
+
+    state def Committing {
+        doc /*"Copying staging to APP and resetting"*/
+    }
+
+    state def Error {
+        doc /*"Error state, awaiting recovery"*/
+    }
+
     part def BootloaderActor {
-        // Flags set by _hw wrapper before calling step()
         attribute active : Boolean = false;
         attribute erase_requested : Boolean = false;
         attribute erase_complete : Boolean = false;
@@ -14,85 +77,52 @@ package Bootloader {
         attribute verify_ok : Boolean = false;
         attribute error_flag : Boolean = false;
 
-        // Counters / state tracked by actor
         attribute bytes_received : Integer = 0;
         attribute chunks_written : Integer = 0;
         attribute total_size : Integer = 0;
         attribute error_code : Integer = 0;
 
-        // Actor metadata
         attribute core : Integer = 1;
         attribute priority : Integer = 3;
 
-        state machine {
-            state idle {
-                doc /*"Waiting for bootloader activation"*/
-                entry action reset_state {
-                    bytes_received := 0;
-                    chunks_written := 0;
-                    total_size := 0;
-                    error_code := 0;
-                    error_flag := false;
-                }
-            }
-
-            state connected {
-                doc /*"Connection established, awaiting commands"*/
-                entry action clear_requests {
-                    erase_requested := false;
-                    erase_complete := false;
-                    chunk_ready := false;
-                    chunk_written := false;
-                    commit_requested := false;
-                    verify_ok := false;
-                }
-            }
-
-            state erasing {
-                doc /*"Erasing staging flash area"*/
-            }
-
-            state receiving {
-                doc /*"Writing firmware chunk to staging"*/
-                do action count_chunk {
-                    chunks_written := chunks_written + 1;
-                }
-            }
-
-            state verifying {
-                doc /*"Verifying firmware integrity"*/
-            }
-
-            state committing {
-                doc /*"Copying staging to APP and resetting"*/
-            }
-
-            state error {
-                doc /*"Error state, awaiting recovery"*/
-            }
+        exhibit state machine {
+            state : Idle;
+            state : Connected;
+            state : Erasing;
+            state : Erased;
+            state : Receiving;
+            state : Verifying;
+            state : Committing;
+            state : Error;
 
             // idle -> connected on PING handshake
-            transition first idle if active then connected;
+            transition first Idle accept active then Connected;
 
-            // connected: command dispatch (priority order)
-            transition first connected if erase_requested then erasing;
-            transition first connected if chunk_ready then receiving;
-            transition first connected if commit_requested then verifying;
+            // connected: only accepts erase command
+            transition first Connected accept erase_requested then Erasing;
 
             // erasing: error takes priority
-            transition first erasing if error_flag then error;
-            transition first erasing if erase_complete then connected;
+            transition first Erasing accept error_flag then Error;
+            transition first Erasing accept erase_complete then Erased;
+
+            // erased: commit takes priority (host decides when data transfer is done)
+            transition first Erased accept error_flag then Error;
+            transition first Erased accept commit_requested then Verifying;
+            transition first Erased accept chunk_ready then Receiving;
 
             // receiving: error takes priority
-            transition first receiving if error_flag then error;
-            transition first receiving if chunk_written then connected;
+            transition first Receiving accept error_flag then Error;
+            transition first Receiving accept chunk_written then Erased;
 
             // verifying: error takes priority
-            transition first verifying if error_flag then error;
-            transition first verifying if verify_ok then committing;
+            transition first Verifying accept error_flag then Error;
+            transition first Verifying accept verify_ok then Committing;
+
+            // committing -> idle (reset after successful commit)
+            transition first Committing then Idle;
 
             // error -> idle (recovery)
-            transition first error then idle;
+            transition first Error then Idle;
         }
 
         requirement {
