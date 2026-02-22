@@ -323,12 +323,18 @@ fn parse_parts(content: &str, port_defs: &[Port], state_defs: &[State], action_d
                     let attributes = parse_attributes(&body);
                     let ports = parse_part_ports(&body, port_defs);
                     let state_machine = parse_state_machine(&body, state_defs, action_defs);
+                    let input_groups = parse_input_groups(&body);
+                    let part_instances = parse_part_instances(&body);
+                    let connections = parse_connections(&body);
 
                     parts.push(PartDef {
                         name,
                         attributes,
                         ports,
                         state_machine,
+                        input_groups,
+                        part_instances,
+                        connections,
                     });
                     search_start = end_pos;
                     continue;
@@ -363,6 +369,16 @@ fn parse_part_ports(body: &str, port_defs: &[Port]) -> Vec<Port> {
                         conjugated,
                         attributes: port_def.attributes.clone(),
                     });
+                } else {
+                    // Port type not found in this file's port defs — create with
+                    // empty signals (resolved later in cross-file composition)
+                    ports.push(Port {
+                        name,
+                        typ,
+                        signals: Vec::new(),
+                        conjugated,
+                        attributes: Vec::new(),
+                    });
                 }
             }
         }
@@ -378,7 +394,7 @@ fn parse_state_machine(body: &str, state_defs: &[State], action_defs: &[ActionDe
 
     let (sm_body, _) = extract_balanced(body, sm_body_start)?;
 
-    let transitions = parse_transitions(&sm_body);
+    let transitions = parse_transitions(&sm_body, action_defs);
 
     // Check if this is an exhibited state machine (uses `state : Name;` references)
     // vs inline state machine (uses `state name { ... }` blocks)
@@ -461,7 +477,7 @@ fn resolve_state_actions_for(state: &mut State, action_defs: &[ActionDef]) {
     }
 }
 
-fn parse_transitions(body: &str) -> Vec<Transition> {
+fn parse_transitions(body: &str, action_defs: &[ActionDef]) -> Vec<Transition> {
     let mut transitions = Vec::new();
 
     // Normalize multi-line transitions into single statements.
@@ -519,26 +535,56 @@ fn parse_transitions(body: &str) -> Vec<Transition> {
         };
 
         // Handle `accept event` keyword between FROM and `then`/`if`
-        // Patterns:
-        //   FROM accept EVENT then TO
-        //   FROM accept EVENT if COND then TO
+        // Also handle `do action : name` between guard and `then`:
+        //   FROM accept EVENT do action : foo then TO
+        //   FROM accept EVENT if COND do action : foo then TO
         //   FROM if COND then TO  (unchanged)
         //   FROM then TO  (unchanged)
         if let Some(then_pos) = rest.find(" then ") {
             let before_then = rest[..then_pos].trim();
             let to_state = rest[then_pos + 6..].trim().trim_end_matches(';').trim().to_string();
 
-            let (from_state, condition, is_accept) = parse_from_and_condition(before_then);
+            // Extract transition actions: `do action : name` before `then`
+            let (before_actions, trans_actions) = extract_transition_actions(before_then, action_defs);
+
+            let (from_state, condition, is_accept) = parse_from_and_condition(before_actions);
 
             transitions.push(Transition {
                 from_state,
                 to_state,
                 condition,
                 is_accept,
+                actions: trans_actions,
             });
         }
     }
     transitions
+}
+
+/// Extract `do action : name` clauses from before-then text.
+/// Returns (remaining_text, actions).
+fn extract_transition_actions<'a>(text: &'a str, action_defs: &[ActionDef]) -> (&'a str, Vec<StateAction>) {
+    let mut actions = Vec::new();
+
+    // Look for " do action : name" pattern
+    if let Some(do_pos) = text.find(" do action : ") {
+        let before = text[..do_pos].trim();
+        let action_name = text[do_pos + 13..].trim().to_string();
+
+        let action_body = action_defs.iter()
+            .find(|ad| ad.name == action_name)
+            .map(|ad| ad.body.clone());
+
+        actions.push(StateAction {
+            kind: ActionKind::Do,
+            name: action_name,
+            body: action_body,
+        });
+
+        return (before, actions);
+    }
+
+    (text, actions)
 }
 
 /// Parse the part before `then` to extract from_state, optional condition, and accept flag.
@@ -678,6 +724,118 @@ fn extract_doc(body: &str) -> Option<String> {
         }
     }
     None
+}
+
+/// Parse `input_group name { var1, var2 }` declarations inside a part body.
+fn parse_input_groups(body: &str) -> Vec<InputGroup> {
+    let mut groups = Vec::new();
+    let pattern = "input_group ";
+    let mut search_start = 0;
+
+    while search_start < body.len() {
+        if let Some(pos) = body[search_start..].find(pattern) {
+            let abs_pos = search_start + pos;
+            let name_start = abs_pos + pattern.len();
+
+            if let Some(brace_offset) = body[name_start..].find('{') {
+                let name = body[name_start..name_start + brace_offset].trim().to_string();
+                let brace_start = name_start + brace_offset;
+
+                if let Some((group_body, end_pos)) = extract_balanced(body, brace_start) {
+                    let members: Vec<String> = group_body
+                        .split(',')
+                        .map(|s| s.trim().trim_end_matches(';').trim().to_string())
+                        .filter(|s| !s.is_empty())
+                        .collect();
+
+                    if !members.is_empty() {
+                        groups.push(InputGroup { name, members });
+                    }
+                    search_start = end_pos;
+                    continue;
+                }
+            }
+            search_start = abs_pos + pattern.len();
+        } else {
+            break;
+        }
+    }
+    groups
+}
+
+/// Parse `part name : Type;` lines inside a part def body.
+/// Distinguishes from `part def`, `port`, and `state` lines.
+fn parse_part_instances(body: &str) -> Vec<PartInstance> {
+    let mut instances = Vec::new();
+    for line in body.lines() {
+        let trimmed = line.trim();
+        // Must start with "part " but NOT "part def "
+        if let Some(rest) = trimmed.strip_prefix("part ") {
+            if rest.starts_with("def ") {
+                continue;
+            }
+            let rest = rest.trim_end_matches(';').trim();
+            if let Some(colon) = rest.find(':') {
+                let name = rest[..colon].trim().to_string();
+                let typ = rest[colon + 1..].trim().to_string();
+                if !name.is_empty() && !typ.is_empty() {
+                    instances.push(PartInstance { name, typ });
+                }
+            }
+        }
+    }
+    instances
+}
+
+/// Parse `connection from.port to to.port;` or `connection from.port to to.port, CAPACITY;`
+/// lines inside a part def body.
+fn parse_connections(body: &str) -> Vec<Connection> {
+    let mut connections = Vec::new();
+    for line in body.lines() {
+        let trimmed = line.trim();
+        if let Some(rest) = trimmed.strip_prefix("connection ") {
+            let rest = rest.trim_end_matches(';').trim();
+            // Split on " to "
+            if let Some(to_pos) = rest.find(" to ") {
+                let from_part_port = rest[..to_pos].trim();
+                let to_and_capacity = rest[to_pos + 4..].trim();
+
+                // Parse from: "part.port"
+                let (from_part, from_port) = if let Some(dot) = from_part_port.find('.') {
+                    (from_part_port[..dot].trim().to_string(),
+                     from_part_port[dot + 1..].trim().to_string())
+                } else {
+                    continue;
+                };
+
+                // Parse to + optional capacity: "part.port" or "part.port, 4"
+                let (to_part_port, capacity) = if let Some(comma) = to_and_capacity.find(',') {
+                    let tp = to_and_capacity[..comma].trim();
+                    let cap_str = to_and_capacity[comma + 1..].trim();
+                    let cap = cap_str.parse::<usize>().unwrap_or(2);
+                    (tp, cap)
+                } else {
+                    (to_and_capacity, 2)
+                };
+
+                let (to_part, to_port) = if let Some(dot) = to_part_port.find('.') {
+                    (to_part_port[..dot].trim().to_string(),
+                     to_part_port[dot + 1..].trim().to_string())
+                } else {
+                    continue;
+                };
+
+                connections.push(Connection {
+                    from_part,
+                    from_port,
+                    to_part,
+                    to_port,
+                    capacity,
+                });
+            }
+        }
+    }
+    connections
 }
 
 /// Extract content within balanced braces starting at `pos` (which points to '{').

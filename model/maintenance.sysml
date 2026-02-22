@@ -3,6 +3,12 @@
 package Maintenance {
     private import ScalarValues::*;
 
+    port def StatusPort {
+        out signal system_ok : Boolean;
+        out signal led_state : Boolean;
+        out signal tick_count : Integer;
+    }
+
     action def increment_tick {
         tick_count := tick_count + 1;
     }
@@ -32,6 +38,8 @@ package Maintenance {
 
     // Maintenance actor
     part def MaintenanceActor {
+        port status_out : StatusPort;
+
         attribute tick_count : Integer = 0;
         attribute led_state : Boolean = false;
         attribute system_ok : Boolean = true;

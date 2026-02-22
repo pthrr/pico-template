@@ -22,12 +22,22 @@ pub fn render_tla(package: &Package) -> Vec<(String, String, String)> {
     results
 }
 
+/// Information about an input variable extracted from `accept` transitions.
+struct InputInfo {
+    name: String,
+    typ: String,
+    /// Guard condition for non-boolean inputs (e.g., `"counter >= threshold"`).
+    guard_condition: Option<String>,
+}
+
 /// Classification of part attributes for TLA+ generation.
 struct AttrInfo {
     /// Constants: never assigned in any action body, not accept inputs.
     constants: Vec<ConstantInfo>,
-    /// Input variables: appear in `accept` transitions.
-    inputs: BTreeSet<String>,
+    /// Input variables: appear in `accept` transitions (ordered).
+    inputs: Vec<InputInfo>,
+    /// Set of input variable names for fast containment checks.
+    input_names: BTreeSet<String>,
     /// State variables: mutable attributes (assigned somewhere).
     state_vars: Vec<VarInfo>,
 }
@@ -45,7 +55,7 @@ struct VarInfo {
 
 /// Classify attributes into constants, inputs, and state variables.
 fn classify_attributes(part: &PartDef, sm: &StateMachine) -> AttrInfo {
-    // Collect all variables assigned in any action body
+    // Collect all variables assigned in any action body (state + transition actions)
     let mut assigned: BTreeSet<String> = BTreeSet::new();
     for state in &sm.states {
         for action in state.entry_actions.iter()
@@ -59,23 +69,28 @@ fn classify_attributes(part: &PartDef, sm: &StateMachine) -> AttrInfo {
             }
         }
     }
+    for t in &sm.transitions {
+        for action in &t.actions {
+            if let Some(body) = &action.body {
+                for (var, _) in tla_expr::parse_assignments(body) {
+                    assigned.insert(var);
+                }
+            }
+        }
+    }
 
-    // Collect accept (input) variables
-    let mut inputs: BTreeSet<String> = BTreeSet::new();
+    // Collect accept (input) variables — including those in comparison expressions
+    let mut input_names: BTreeSet<String> = BTreeSet::new();
+    let mut input_guards: std::collections::BTreeMap<String, Option<String>> = std::collections::BTreeMap::new();
     for t in &sm.transitions {
         if t.is_accept {
             if let Some(cond) = &t.condition {
-                // The condition from accept is the event name (variable name)
-                // It may be combined with "and" for accept EVENT if COND
-                // Extract bare variable names that are the accept event
                 for word in cond.split(" and ") {
                     let word = word.trim();
-                    // Skip comparison expressions (contain operators)
-                    if !word.contains(">=") && !word.contains("<=")
-                        && !word.contains('>') && !word.contains('<')
-                        && !word.contains("==") && !word.contains("!=")
-                    {
-                        inputs.insert(word.to_string());
+                    let (var_name, guard) = extract_accept_var(word);
+                    if !input_names.contains(&var_name) {
+                        input_names.insert(var_name.clone());
+                        input_guards.insert(var_name, guard);
                     }
                 }
             }
@@ -87,7 +102,7 @@ fn classify_attributes(part: &PartDef, sm: &StateMachine) -> AttrInfo {
 
     for attr in &part.attributes {
         let name = &attr.name;
-        if inputs.contains(name) {
+        if input_names.contains(name) {
             // Input variable — handled separately
             state_vars.push(VarInfo {
                 name: name.clone(),
@@ -110,9 +125,24 @@ fn classify_attributes(part: &PartDef, sm: &StateMachine) -> AttrInfo {
         }
     }
 
+    // Build InputInfo list in deterministic order
+    let inputs: Vec<InputInfo> = input_names.iter().map(|name| {
+        let typ = part.attributes.iter()
+            .find(|a| &a.name == name)
+            .map(|a| a.typ.clone())
+            .unwrap_or_else(|| "Boolean".to_string());
+        let guard_condition = input_guards.get(name).cloned().flatten();
+        InputInfo {
+            name: name.clone(),
+            typ,
+            guard_condition,
+        }
+    }).collect();
+
     AttrInfo {
         constants,
         inputs,
+        input_names,
         state_vars,
     }
 }
@@ -136,6 +166,20 @@ fn tla_type_constraint(name: &str, typ: &str) -> String {
         "Integer" | "Real" => format!("{name} \\in Int"),
         _ => format!("{name} \\in Int"),
     }
+}
+
+/// Extract the variable name from an accept condition.
+/// For bare identifiers: `"pressed"` → `("pressed", None)`.
+/// For comparison expressions: `"counter >= threshold"` → `("counter", Some("counter >= threshold"))`.
+fn extract_accept_var(cond: &str) -> (String, Option<String>) {
+    let operators = [">=", "<=", "!=", "==", ">", "<"];
+    for op in &operators {
+        if let Some(pos) = cond.find(op) {
+            let lhs = cond[..pos].trim().to_string();
+            return (lhs, Some(cond.to_string()));
+        }
+    }
+    (cond.to_string(), None)
 }
 
 /// Render the complete TLA+ module for a part.
@@ -219,34 +263,43 @@ fn render_tla_module(part: &PartDef, sm: &StateMachine, info: &AttrInfo) -> Stri
         out.push_str("\n\n");
     }
 
-    // Env actions: one sub-action per input variable.
+    // Env actions: one sub-action per ungrouped input variable.
     // Each Env_v sets one input nondeterministically, others unchanged.
-    // This models independent input arrival and prevents priority starvation
-    // in IF-THEN-ELSE guard chains.
+    // Grouped inputs get a combined Env action that sets all members atomically.
     let has_env = !info.inputs.is_empty();
     if has_env {
-        let input_names: Vec<&String> = info.inputs.iter().collect();
+        // Partition inputs into grouped and ungrouped
+        let grouped_names: BTreeSet<String> = part.input_groups.iter()
+            .flat_map(|g| g.members.iter().cloned())
+            .collect();
+        let ungrouped: Vec<&InputInfo> = info.inputs.iter()
+            .filter(|i| !grouped_names.contains(&i.name))
+            .collect();
+
+        let all_input_names: Vec<&str> = info.inputs.iter()
+            .map(|i| i.name.as_str())
+            .collect();
         let non_input_vars: Vec<&str> = std::iter::once("state")
             .chain(info.state_vars.iter()
-                .filter(|v| !info.inputs.contains(&v.name))
+                .filter(|v| !info.input_names.contains(&v.name))
                 .map(|v| v.name.as_str()))
             .collect();
 
-        for input_name in &input_names {
-            let typ = part.attributes.iter()
-                .find(|a| &a.name == *input_name)
-                .map(|a| a.typ.as_str())
-                .unwrap_or("Boolean");
-            let domain = match typ {
-                "Boolean" => "BOOLEAN",
-                "Integer" | "Real" => "Int",
-                _ => "BOOLEAN",
+        let mut env_action_names: Vec<String> = Vec::new();
+
+        // Ungrouped: per-input Env actions
+        for input in &ungrouped {
+            let input_name = &input.name;
+            let domain = match input.typ.as_str() {
+                "Boolean" => "BOOLEAN".to_string(),
+                "Integer" | "Real" => "0..100".to_string(),
+                _ => "BOOLEAN".to_string(),
             };
             out.push_str(&format!("Env_{input_name} ==\n"));
             out.push_str(&format!("    /\\ {input_name}' \\in {domain}\n"));
-            let other_inputs: Vec<&str> = input_names.iter()
-                .filter(|n| *n != input_name)
-                .map(|n| n.as_str())
+            let other_inputs: Vec<&str> = all_input_names.iter()
+                .filter(|n| **n != input_name.as_str())
+                .copied()
                 .collect();
             let mut unchanged: Vec<&str> = non_input_vars.clone();
             unchanged.extend(other_inputs);
@@ -254,12 +307,38 @@ fn render_tla_module(part: &PartDef, sm: &StateMachine, info: &AttrInfo) -> Stri
                 out.push_str(&format!("    /\\ UNCHANGED <<{}>>\n", unchanged.join(", ")));
             }
             out.push('\n');
+            env_action_names.push(format!("Env_{input_name}"));
         }
 
-        let env_names: Vec<String> = input_names.iter()
-            .map(|n| format!("Env_{n}"))
-            .collect();
-        out.push_str(&format!("Env == {}\n\n", env_names.join(" \\/ ")));
+        // Grouped: combined Env actions
+        for group in &part.input_groups {
+            let group_name = &group.name;
+            out.push_str(&format!("Env_{group_name} ==\n"));
+            for member in &group.members {
+                let member_info = info.inputs.iter().find(|i| &i.name == member);
+                let domain = member_info.map_or("BOOLEAN".to_string(), |i| {
+                    match i.typ.as_str() {
+                        "Boolean" => "BOOLEAN".to_string(),
+                        "Integer" | "Real" => "0..100".to_string(),
+                        _ => "BOOLEAN".to_string(),
+                    }
+                });
+                out.push_str(&format!("    /\\ {member}' \\in {domain}\n"));
+            }
+            let other_inputs: Vec<&str> = all_input_names.iter()
+                .filter(|n| !group.members.iter().any(|m| m.as_str() == **n))
+                .copied()
+                .collect();
+            let mut unchanged: Vec<&str> = non_input_vars.clone();
+            unchanged.extend(other_inputs);
+            if !unchanged.is_empty() {
+                out.push_str(&format!("    /\\ UNCHANGED <<{}>>\n", unchanged.join(", ")));
+            }
+            out.push('\n');
+            env_action_names.push(format!("Env_{group_name}"));
+        }
+
+        out.push_str(&format!("Env == {}\n\n", env_action_names.join(" \\/ ")));
     }
 
     // Next and Spec
@@ -269,32 +348,70 @@ fn render_tla_module(part: &PartDef, sm: &StateMachine, info: &AttrInfo) -> Stri
         out.push_str("Next == Step\n\n");
     }
 
-    // EnvFairness: SF_vars(Env_v /\ v' = TRUE) per boolean input
+    // EnvFairness: per-input or per-group SF with appropriate guard
     if has_env {
-        let input_names: Vec<&String> = info.inputs.iter().collect();
-        let fairness_expr = |input_name: &str| -> String {
-            let typ = part.attributes.iter()
-                .find(|a| a.name == input_name)
-                .map(|a| a.typ.as_str())
-                .unwrap_or("Boolean");
-            match typ {
-                "Boolean" => format!("SF_{vars_tuple}(Env_{input_name} /\\ {input_name}' = TRUE)"),
-                _ => format!("SF_{vars_tuple}(Env_{input_name} /\\ {input_name}')"),
-            }
-        };
+        let grouped_names: BTreeSet<String> = part.input_groups.iter()
+            .flat_map(|g| g.members.iter().cloned())
+            .collect();
+        let ungrouped: Vec<&InputInfo> = info.inputs.iter()
+            .filter(|i| !grouped_names.contains(&i.name))
+            .collect();
 
-        if input_names.len() == 1 {
+        let mut fairness_exprs: Vec<String> = Vec::new();
+
+        // Ungrouped inputs
+        for input in &ungrouped {
+            let input_name = &input.name;
+            let expr = match input.typ.as_str() {
+                "Boolean" => format!(
+                    "SF_{vars_tuple}(Env_{input_name} /\\ {input_name}' = TRUE)"
+                ),
+                _ => {
+                    if let Some(guard) = &input.guard_condition {
+                        let tla_guard = tla_expr::sysml_condition_to_tla(guard);
+                        // Replace variable with primed version in guard
+                        let primed_guard = word_replace(&tla_guard, input_name, &format!("{input_name}'"));
+                        format!("SF_{vars_tuple}(Env_{input_name} /\\ {primed_guard})")
+                    } else {
+                        format!("SF_{vars_tuple}(Env_{input_name})")
+                    }
+                }
+            };
+            fairness_exprs.push(expr);
+        }
+
+        // Grouped inputs
+        for group in &part.input_groups {
+            let group_name = &group.name;
+            let member_conds: Vec<String> = group.members.iter().map(|m| {
+                let member_info = info.inputs.iter().find(|i| &i.name == m);
+                match member_info.map(|i| i.typ.as_str()).unwrap_or("Boolean") {
+                    "Boolean" => format!("{m}' = TRUE"),
+                    _ => {
+                        if let Some(guard) = member_info.and_then(|i| i.guard_condition.as_ref()) {
+                            let tla_guard = tla_expr::sysml_condition_to_tla(guard);
+                            word_replace(&tla_guard, m, &format!("{m}'"))
+                        } else {
+                            format!("{m}' > 0")
+                        }
+                    }
+                }
+            }).collect();
+            fairness_exprs.push(format!(
+                "SF_{vars_tuple}(Env_{group_name} /\\ {})",
+                member_conds.join(" /\\ ")
+            ));
+        }
+
+        if fairness_exprs.len() == 1 {
             out.push_str(&format!(
                 "EnvFairness == {}\n\n",
-                fairness_expr(input_names[0])
+                fairness_exprs[0]
             ));
         } else {
             out.push_str("EnvFairness ==\n");
-            for input_name in &input_names {
-                out.push_str(&format!(
-                    "    /\\ {}\n",
-                    fairness_expr(input_name)
-                ));
+            for expr in &fairness_exprs {
+                out.push_str(&format!("    /\\ {expr}\n"));
             }
             out.push('\n');
         }
@@ -386,6 +503,16 @@ fn render_step_actions(sm: &StateMachine, info: &AttrInfo) -> String {
             .map(|(var, _)| var.clone())
             .collect();
 
+        // Collect exit-actions for this state
+        let exit_assignments = collect_exit_assignments(state);
+        let exit_modified: BTreeSet<String> = exit_assignments.iter()
+            .map(|(var, _)| var.clone())
+            .collect();
+
+        // Combined: do + exit actions are unconditional (happen before transition logic)
+        let mut unconditional_modified: BTreeSet<String> = do_modified.clone();
+        unconditional_modified.extend(exit_modified.iter().cloned());
+
         // Separate conditional and unconditional transitions
         let conditional: Vec<&&Transition> = transitions.iter()
             .filter(|t| t.condition.is_some())
@@ -401,8 +528,20 @@ fn render_step_actions(sm: &StateMachine, info: &AttrInfo) -> String {
                 .map(|a| a.name.as_str())
                 .collect();
             out.push_str(&format!("do {}", action_names.join(", ")));
-            if !transitions.is_empty() {
+            if !transitions.is_empty() || !exit_assignments.is_empty() {
                 out.push_str(", ");
+            }
+        }
+        if !exit_assignments.is_empty() {
+            let action_names: Vec<&str> = state.exit_actions.iter()
+                .filter(|a| a.body.is_some())
+                .map(|a| a.name.as_str())
+                .collect();
+            if !action_names.is_empty() {
+                out.push_str(&format!("exit {}", action_names.join(", ")));
+                if !transitions.is_empty() {
+                    out.push_str(", ");
+                }
             }
         }
         if !conditional.is_empty() && unconditional.is_empty() {
@@ -419,17 +558,21 @@ fn render_step_actions(sm: &StateMachine, info: &AttrInfo) -> String {
         out.push_str(&format!("Step{} ==\n", state.name));
         out.push_str(&format!("    /\\ state = \"{}\"\n", state.name));
 
-        // Collect all variables modified by any branch (entry actions of target states)
+        // Collect all variables modified by any branch (entry + transition actions of target states)
         let mut all_branch_modified: BTreeSet<String> = BTreeSet::new();
-        all_branch_modified.extend(do_modified.iter().cloned());
+        all_branch_modified.extend(unconditional_modified.iter().cloned());
         for t in &transitions {
             let entry_assigns = collect_entry_assignments_for_target(sm, &t.to_state);
             for (var, _) in &entry_assigns {
                 all_branch_modified.insert(var.clone());
             }
+            let trans_assigns = collect_transition_action_assignments(t);
+            for (var, _) in &trans_assigns {
+                all_branch_modified.insert(var.clone());
+            }
         }
 
-        // Variables not modified in ANY branch or do-action → outer UNCHANGED
+        // Variables not modified in ANY branch, do-action, or exit-action → outer UNCHANGED
         let unchanged_vars: Vec<&str> = all_var_names.iter()
             .filter(|v| !all_branch_modified.contains(**v))
             .copied()
@@ -472,22 +615,37 @@ fn render_step_actions(sm: &StateMachine, info: &AttrInfo) -> String {
                 }
             }
 
+            // Exit-action assignments (rendered after do-actions, before transition)
+            for (var, expr) in &exit_assignments {
+                if !do_modified.contains(var) {
+                    let tla_expr = tla_expr::sysml_expr_to_tla(expr);
+                    out.push_str(&format!("          /\\ {var}' = {tla_expr}\n"));
+                }
+            }
+
             // Transition logic using post values
             render_transition_logic(&mut out, sm, &conditional, &unconditional,
-                                    &do_modified, &all_branch_modified, "          ", true);
-        } else if !do_assignments.is_empty() {
-            // Do-actions without LET (no guard conflict)
+                                    &unconditional_modified, &all_branch_modified, "          ", true);
+        } else if !do_assignments.is_empty() || !exit_assignments.is_empty() {
+            // Do-actions and/or exit-actions without LET (no guard conflict)
             for (var, expr) in &do_assignments {
                 let tla_expr = tla_expr::sysml_expr_to_tla(expr);
                 out.push_str(&format!("    /\\ {var}' = {tla_expr}\n"));
             }
+            // Exit-action assignments
+            for (var, expr) in &exit_assignments {
+                if !do_modified.contains(var) {
+                    let tla_expr = tla_expr::sysml_expr_to_tla(expr);
+                    out.push_str(&format!("    /\\ {var}' = {tla_expr}\n"));
+                }
+            }
             // Transition logic
             render_transition_logic(&mut out, sm, &conditional, &unconditional,
-                                    &do_modified, &all_branch_modified, "    ", false);
+                                    &unconditional_modified, &all_branch_modified, "    ", false);
         } else {
-            // No do-actions, just transitions
+            // No do-actions or exit-actions, just transitions
             render_transition_logic(&mut out, sm, &conditional, &unconditional,
-                                    &do_modified, &all_branch_modified, "    ", false);
+                                    &unconditional_modified, &all_branch_modified, "    ", false);
         }
 
         // Outer UNCHANGED
@@ -515,20 +673,29 @@ fn render_transition_logic(
     if conditional.is_empty() && unconditional.len() == 1 {
         // Simple unconditional transition
         let t = unconditional[0];
+        let trans_assigns = collect_transition_action_assignments(t);
         let entry_assigns = collect_entry_assignments_for_target(sm, &t.to_state);
         out.push_str(&format!("{indent}/\\ state' = \"{}\"\n", t.to_state));
+        // Transition actions (between exit and entry)
+        let mut branch_vars: BTreeSet<String> = BTreeSet::new();
+        for (var, expr) in &trans_assigns {
+            if !do_modified.contains(var) {
+                let tla_expr = tla_expr::sysml_expr_to_tla(expr);
+                out.push_str(&format!("{indent}/\\ {var}' = {tla_expr}\n"));
+                branch_vars.insert(var.clone());
+            }
+        }
+        // Entry actions (last writer wins — entry overwrites transition)
         for (var, expr) in &entry_assigns {
             if !do_modified.contains(var) {
                 let tla_expr = tla_expr::sysml_expr_to_tla(expr);
                 out.push_str(&format!("{indent}/\\ {var}' = {tla_expr}\n"));
+                branch_vars.insert(var.clone());
             }
         }
-        // Variables modified in branch but not do or entry → stay same
-        let branch_entry_vars: BTreeSet<String> = entry_assigns.iter()
-            .map(|(v, _)| v.clone())
-            .collect();
+        // Variables modified in branch but not do/exit/trans/entry → stay same
         for var in all_branch_modified {
-            if !do_modified.contains(var) && !branch_entry_vars.contains(var) && var != "state" {
+            if !do_modified.contains(var) && !branch_vars.contains(var) && var != "state" {
                 out.push_str(&format!("{indent}/\\ {var}' = {var}\n"));
             }
         }
@@ -549,8 +716,17 @@ fn render_transition_logic(
                 out.push_str(&format!("{indent}   ELSE IF {tla_cond}\n"));
             }
 
+            let trans_assigns = collect_transition_action_assignments(t);
             let entry_assigns = collect_entry_assignments_for_target(sm, &t.to_state);
             out.push_str(&format!("{indent}   THEN /\\ state' = \"{}\"\n", t.to_state));
+            // Transition actions
+            for (var, expr) in &trans_assigns {
+                if !do_modified.contains(var) {
+                    let tla_expr = tla_expr::sysml_expr_to_tla(expr);
+                    out.push_str(&format!("{indent}        /\\ {var}' = {tla_expr}\n"));
+                }
+            }
+            // Entry actions
             for (var, expr) in &entry_assigns {
                 if !do_modified.contains(var) {
                     let tla_expr = tla_expr::sysml_expr_to_tla(expr);
@@ -558,21 +734,28 @@ fn render_transition_logic(
                 }
             }
             // Variables modified in other branches but not this one
-            emit_branch_unchanged(out, sm, all_branch_modified, do_modified, &t.to_state, indent);
+            emit_branch_unchanged(out, sm, all_branch_modified, do_modified, t, indent);
         }
 
         // ELSE clause
         if !unconditional.is_empty() {
             let t = unconditional[0];
+            let trans_assigns = collect_transition_action_assignments(t);
             let entry_assigns = collect_entry_assignments_for_target(sm, &t.to_state);
             out.push_str(&format!("{indent}   ELSE /\\ state' = \"{}\"\n", t.to_state));
+            for (var, expr) in &trans_assigns {
+                if !do_modified.contains(var) {
+                    let tla_expr = tla_expr::sysml_expr_to_tla(expr);
+                    out.push_str(&format!("{indent}        /\\ {var}' = {tla_expr}\n"));
+                }
+            }
             for (var, expr) in &entry_assigns {
                 if !do_modified.contains(var) {
                     let tla_expr = tla_expr::sysml_expr_to_tla(expr);
                     out.push_str(&format!("{indent}        /\\ {var}' = {tla_expr}\n"));
                 }
             }
-            emit_branch_unchanged(out, sm, all_branch_modified, do_modified, &t.to_state, indent);
+            emit_branch_unchanged(out, sm, all_branch_modified, do_modified, t, indent);
         } else {
             // No unconditional fallback → stay in same state
             out.push_str(&format!("{indent}   ELSE /\\ state' = state\n"));
@@ -587,19 +770,24 @@ fn render_transition_logic(
 }
 
 /// Emit UNCHANGED-equivalent primed assignments for variables modified in other
-/// branches but not in the current target's entry actions.
+/// branches but not in the current transition's actions or target's entry actions.
 fn emit_branch_unchanged(
     out: &mut String,
     sm: &StateMachine,
     all_branch_modified: &BTreeSet<String>,
     do_modified: &BTreeSet<String>,
-    target_state: &str,
+    transition: &Transition,
     indent: &str,
 ) {
-    let entry_assigns = collect_entry_assignments_for_target(sm, target_state);
-    let branch_vars: BTreeSet<String> = entry_assigns.iter()
-        .map(|(v, _)| v.clone())
-        .collect();
+    let trans_assigns = collect_transition_action_assignments(transition);
+    let entry_assigns = collect_entry_assignments_for_target(sm, &transition.to_state);
+    let mut branch_vars: BTreeSet<String> = BTreeSet::new();
+    for (v, _) in &trans_assigns {
+        branch_vars.insert(v.clone());
+    }
+    for (v, _) in &entry_assigns {
+        branch_vars.insert(v.clone());
+    }
     for var in all_branch_modified {
         if !do_modified.contains(var) && !branch_vars.contains(var) {
             out.push_str(&format!("{indent}        /\\ {var}' = {var}\n"));
@@ -677,6 +865,28 @@ fn collect_entry_assignments_for_target(sm: &StateMachine, target_name: &str) ->
             if let Some(body) = &action.body {
                 result.extend(tla_expr::parse_assignments(body));
             }
+        }
+    }
+    result
+}
+
+/// Collect exit-action assignments for a source state.
+fn collect_exit_assignments(state: &State) -> Vec<(String, String)> {
+    let mut result = Vec::new();
+    for action in &state.exit_actions {
+        if let Some(body) = &action.body {
+            result.extend(tla_expr::parse_assignments(body));
+        }
+    }
+    result
+}
+
+/// Collect transition-action assignments for a transition.
+fn collect_transition_action_assignments(t: &Transition) -> Vec<(String, String)> {
+    let mut result = Vec::new();
+    for action in &t.actions {
+        if let Some(body) = &action.body {
+            result.extend(tla_expr::parse_assignments(body));
         }
     }
     result

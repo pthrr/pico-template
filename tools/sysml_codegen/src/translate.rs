@@ -126,8 +126,12 @@ pub fn translate(package: &Package) -> (result: RustModule)
         items.push(RustItem::Enum(translate_enum(enum_def)));
     }
 
-    // Port traits
+    // Port traits and message structs
     for port_def in &package.port_defs {
+        // Message struct from port signals (e.g., ButtonPort → ButtonMessage)
+        if !port_def.signals.is_empty() {
+            items.push(RustItem::Struct(translate_port_message(port_def)));
+        }
         items.push(RustItem::Trait(translate_port_trait(port_def)));
     }
 
@@ -219,6 +223,41 @@ fn translate_port_trait(port: &Port) -> RustTrait {
     }
 }
 
+/// Derive message struct name from port type name.
+/// `ButtonPort` → `ButtonMessage`, `StatusPort` → `StatusMessage`.
+#[verifier::external_body]
+fn port_message_name(port_type: &str) -> (result: String)
+    ensures result@.len() > 0,
+{
+    if let Some(base) = port_type.strip_suffix("Port") {
+        format!("{base}Message")
+    } else {
+        format!("{port_type}Message")
+    }
+}
+
+/// Generate a message struct from a port definition's signals.
+#[verifier::external_body]
+fn translate_port_message(port: &Port) -> RustStruct {
+    let msg_name = port_message_name(&port.typ);
+    let mut fields = Vec::new();
+    for sig in &port.signals {
+        fields.push(RustField {
+            name: sig.name.clone(),
+            typ: rust_type(&sig.typ).to_string(),
+        });
+    }
+    RustStruct {
+        name: msg_name,
+        fields,
+        derives: vec![
+            "Debug".to_string(),
+            "Clone".to_string(),
+            "Copy".to_string(),
+        ],
+    }
+}
+
 /// Translate a SysML part into a set of Rust IR items.
 #[verifier::external_body]
 pub fn translate_part(part: &PartDef, port_defs: &[Port]) -> (result: Vec<RustItem>)
@@ -269,20 +308,19 @@ pub fn translate_part(part: &PartDef, port_defs: &[Port]) -> (result: Vec<RustIt
         });
     }
     for port in &part.ports {
-        for sig in &port.signals {
-            let mut field_name = String::new();
-            field_name.push_str(port.name.as_str());
-            field_name.push('_');
-            field_name.push_str(sig.name.as_str());
+        if !port.signals.is_empty() {
+            // Typed port field: e.g., `button_out: ButtonMessage`
+            let msg_name = port_message_name(&port.typ);
             fields.push(RustField {
-                name: field_name,
-                typ: rust_type(&sig.typ).to_string(),
+                name: port.name.clone(),
+                typ: msg_name,
             });
         }
     }
     items.push(RustItem::Struct(RustStruct {
         name: part.name.clone(),
         fields,
+        derives: Vec::new(),
     }));
 
     // Impl block
@@ -294,12 +332,13 @@ pub fn translate_part(part: &PartDef, port_defs: &[Port]) -> (result: Vec<RustIt
         field_defaults.push((attr.name.clone(), rust_default(&attr.typ, &attr.default)));
     }
     for port in &part.ports {
-        for sig in &port.signals {
-            let mut field_name = String::new();
-            field_name.push_str(port.name.as_str());
-            field_name.push('_');
-            field_name.push_str(sig.name.as_str());
-            field_defaults.push((field_name, rust_default(&sig.typ, &None)));
+        if !port.signals.is_empty() {
+            let msg_name = port_message_name(&port.typ);
+            let sig_defaults: Vec<String> = port.signals.iter()
+                .map(|sig| format!("{}: {}", sig.name, rust_default(&sig.typ, &None)))
+                .collect();
+            let init_expr = format!("{msg_name} {{ {} }}", sig_defaults.join(", "));
+            field_defaults.push((port.name.clone(), init_expr));
         }
     }
 
@@ -367,12 +406,10 @@ pub fn translate_part(part: &PartDef, port_defs: &[Port]) -> (result: Vec<RustIt
                     let rtype = rust_type(&sig.typ).to_string();
                     match sig.direction {
                         SignalDirection::Out => {
-                            // getter
-                            let mut get_body_line = String::new();
-                            get_body_line.push_str("self.");
-                            get_body_line.push_str(port.name.as_str());
-                            get_body_line.push('_');
-                            get_body_line.push_str(sig.name.as_str());
+                            // getter: self.port_name.signal_name
+                            let get_body_line = format!(
+                                "self.{}.{}", port.name, sig.name
+                            );
                             trait_methods.push(RustMethod {
                                 doc: None,
                                 name: {
@@ -385,16 +422,13 @@ pub fn translate_part(part: &PartDef, port_defs: &[Port]) -> (result: Vec<RustIt
                                 ret_type: Some(rtype.clone()),
                                 body: MethodBody::SimpleLines(vec![get_body_line]),
                             });
-                            // setter
+                            // setter: self.port_name.signal_name = value;
                             let mut set_params = String::new();
                             set_params.push_str("&mut self, value: ");
                             set_params.push_str(rust_type(&sig.typ));
-                            let mut set_body_line = String::new();
-                            set_body_line.push_str("self.");
-                            set_body_line.push_str(port.name.as_str());
-                            set_body_line.push('_');
-                            set_body_line.push_str(sig.name.as_str());
-                            set_body_line.push_str(" = value;");
+                            let set_body_line = format!(
+                                "self.{}.{} = value;", port.name, sig.name
+                            );
                             trait_methods.push(RustMethod {
                                 doc: None,
                                 name: {
@@ -409,11 +443,9 @@ pub fn translate_part(part: &PartDef, port_defs: &[Port]) -> (result: Vec<RustIt
                             });
                         }
                         SignalDirection::In => {
-                            let mut get_body_line = String::new();
-                            get_body_line.push_str("self.");
-                            get_body_line.push_str(port.name.as_str());
-                            get_body_line.push('_');
-                            get_body_line.push_str(sig.name.as_str());
+                            let get_body_line = format!(
+                                "self.{}.{}", port.name, sig.name
+                            );
                             trait_methods.push(RustMethod {
                                 doc: None,
                                 name: {
@@ -480,6 +512,28 @@ fn translate_state_machine(
             }
         }
 
+        // Exit actions
+        let mut exit_actions = Vec::new();
+        for action in &state.exit_actions {
+            if let Some(body) = &action.body {
+                let assignments = expr::parse_assignments(body);
+                if !assignments.is_empty() {
+                    let mut comment = String::new();
+                    comment.push_str("Exit action: ");
+                    comment.push_str(action.name.as_str());
+
+                    for (i, pair) in assignments.iter().enumerate() {
+                        let rust_expr = expr::sysml_expr_to_rust(&pair.1, attributes);
+                        exit_actions.push(Assignment {
+                            comment: if i == 0 { Some(comment.clone()) } else { None },
+                            var: pair.0.clone(),
+                            expr: rust_expr,
+                        });
+                    }
+                }
+            }
+        }
+
         // Transitions from this state
         let mut conditional: Vec<&Transition> = Vec::new();
         let mut unconditional: Vec<&Transition> = Vec::new();
@@ -502,27 +556,33 @@ fn translate_state_machine(
                     None => "true",
                 };
                 let cond = expr::sysml_condition_to_rust(cond_str, attributes);
+                let transition_actions = collect_transition_actions_rust(trans, attributes);
                 let entry_actions = collect_entry_actions(sm, &trans.to_state, attributes);
                 transitions.push(TransitionCode::Conditional {
                     condition: cond,
                     target_variant: to_variant,
+                    transition_actions,
                     entry_actions,
                 });
             }
             if !conditional.is_empty() && !unconditional.is_empty() {
                 let trans = unconditional[0];
                 let to_variant = to_pascal_case(&trans.to_state);
+                let transition_actions = collect_transition_actions_rust(trans, attributes);
                 let entry_actions = collect_entry_actions(sm, &trans.to_state, attributes);
                 transitions.push(TransitionCode::Unconditional {
                     target_variant: to_variant,
+                    transition_actions,
                     entry_actions,
                 });
             } else {
                 for trans in &unconditional {
                     let to_variant = to_pascal_case(&trans.to_state);
+                    let transition_actions = collect_transition_actions_rust(trans, attributes);
                     let entry_actions = collect_entry_actions(sm, &trans.to_state, attributes);
                     transitions.push(TransitionCode::Unconditional {
                         target_variant: to_variant,
+                        transition_actions,
                         entry_actions,
                     });
                 }
@@ -532,6 +592,7 @@ fn translate_state_machine(
         arms.push(StepArm {
             variant,
             do_actions,
+            exit_actions,
             transitions,
         });
     }
@@ -567,6 +628,35 @@ fn collect_entry_actions(
                             expr: rust_expr,
                         });
                     }
+                }
+            }
+        }
+    }
+    result
+}
+
+/// Collect transition actions for a transition.
+#[verifier::external_body]
+fn collect_transition_actions_rust(
+    trans: &Transition,
+    attributes: &[Attribute],
+) -> Vec<Assignment> {
+    let mut result = Vec::new();
+    for action in &trans.actions {
+        if let Some(body) = &action.body {
+            let assignments = expr::parse_assignments(body);
+            if !assignments.is_empty() {
+                let mut comment = String::new();
+                comment.push_str("Transition action: ");
+                comment.push_str(action.name.as_str());
+
+                for (i, pair) in assignments.iter().enumerate() {
+                    let rust_expr = expr::sysml_expr_to_rust(&pair.1, attributes);
+                    result.push(Assignment {
+                        comment: if i == 0 { Some(comment.clone()) } else { None },
+                        var: pair.0.clone(),
+                        expr: rust_expr,
+                    });
                 }
             }
         }

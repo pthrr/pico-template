@@ -67,6 +67,9 @@ fn render_trait(buf: &mut Vec<String>, t: &RustTrait) {
 }
 
 fn render_struct(buf: &mut Vec<String>, s: &RustStruct) {
+    if !s.derives.is_empty() {
+        buf.push(format!("#[derive({})]", s.derives.join(", ")));
+    }
     buf.push(format!("pub struct {} {{", s.name));
     for f in &s.fields {
         buf.push(format!("    pub {}: {},", f.name, f.typ));
@@ -167,6 +170,17 @@ fn render_step_body(buf: &mut Vec<String>, body: &StepBody, indent: &str) {
             ));
         }
 
+        // Exit actions
+        for action in &arm.exit_actions {
+            if let Some(comment) = &action.comment {
+                buf.push(format!("{indent}            // {comment}"));
+            }
+            buf.push(format!(
+                "{indent}            {}",
+                render_assignment(&action.var, &action.expr)
+            ));
+        }
+
         // Transitions
         if !arm.transitions.is_empty() {
             buf.push(String::new());
@@ -184,6 +198,7 @@ fn render_step_body(buf: &mut Vec<String>, body: &StepBody, indent: &str) {
                         TransitionCode::Conditional {
                             condition,
                             target_variant,
+                            transition_actions,
                             entry_actions,
                         } => {
                             if is_first {
@@ -200,12 +215,14 @@ fn render_step_body(buf: &mut Vec<String>, body: &StepBody, indent: &str) {
                                 buf,
                                 &body.state_enum,
                                 target_variant,
+                                transition_actions,
                                 entry_actions,
                                 &format!("{indent}                "),
                             );
                         }
                         TransitionCode::Unconditional {
                             target_variant,
+                            transition_actions,
                             entry_actions,
                         } => {
                             buf.push(format!("{indent}            }} else {{"));
@@ -213,6 +230,7 @@ fn render_step_body(buf: &mut Vec<String>, body: &StepBody, indent: &str) {
                                 buf,
                                 &body.state_enum,
                                 target_variant,
+                                transition_actions,
                                 entry_actions,
                                 &format!("{indent}                "),
                             );
@@ -225,6 +243,7 @@ fn render_step_body(buf: &mut Vec<String>, body: &StepBody, indent: &str) {
                 for trans in &arm.transitions {
                     if let TransitionCode::Unconditional {
                         target_variant,
+                        transition_actions,
                         entry_actions,
                     } = trans
                     {
@@ -232,6 +251,7 @@ fn render_step_body(buf: &mut Vec<String>, body: &StepBody, indent: &str) {
                             buf,
                             &body.state_enum,
                             target_variant,
+                            transition_actions,
                             entry_actions,
                             &format!("{indent}            "),
                         );
@@ -250,9 +270,18 @@ fn render_entry_and_transition(
     buf: &mut Vec<String>,
     state_enum: &str,
     target_variant: &str,
+    transition_actions: &[Assignment],
     entry_actions: &[Assignment],
     indent: &str,
 ) {
+    // Transition actions (between exit and entry)
+    for action in transition_actions {
+        if let Some(comment) = &action.comment {
+            buf.push(format!("{indent}// {comment}"));
+        }
+        buf.push(format!("{indent}{}", render_assignment(&action.var, &action.expr)));
+    }
+    // Entry actions
     for action in entry_actions {
         if let Some(comment) = &action.comment {
             buf.push(format!("{indent}// {comment}"));

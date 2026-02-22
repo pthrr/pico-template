@@ -71,6 +71,8 @@ pub struct Transition {
     pub to_state: String,
     pub condition: Option<String>,
     pub is_accept: bool,
+    /// Actions executed during the transition (between exit and entry).
+    pub actions: Vec<StateAction>,
 }
 
 /// A state machine (set of states + transitions).
@@ -94,6 +96,30 @@ pub struct EnumDef {
     pub values: Vec<String>,
 }
 
+/// A group of correlated input variables that change atomically.
+#[derive(Clone, Debug)]
+pub struct InputGroup {
+    pub name: String,
+    pub members: Vec<String>,
+}
+
+/// A part instance inside a system-level part def.
+#[derive(Clone, Debug)]
+pub struct PartInstance {
+    pub name: String,
+    pub typ: String,
+}
+
+/// A connection between two ports via part instances.
+#[derive(Clone, Debug)]
+pub struct Connection {
+    pub from_part: String,
+    pub from_port: String,
+    pub to_part: String,
+    pub to_port: String,
+    pub capacity: usize,
+}
+
 /// A part definition (struct with optional state machine).
 #[derive(Clone, Debug)]
 pub struct PartDef {
@@ -101,6 +127,12 @@ pub struct PartDef {
     pub attributes: Vec<Attribute>,
     pub ports: Vec<Port>,
     pub state_machine: Option<StateMachine>,
+    /// Correlated input groups for atomic Env actions.
+    pub input_groups: Vec<InputGroup>,
+    /// Part instances (for system-level composition).
+    pub part_instances: Vec<PartInstance>,
+    /// Connections between part instance ports.
+    pub connections: Vec<Connection>,
 }
 
 /// Top-level package.

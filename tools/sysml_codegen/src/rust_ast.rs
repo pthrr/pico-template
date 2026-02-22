@@ -53,6 +53,8 @@ pub struct TraitMethodSig {
 pub struct RustStruct {
     pub name: String,
     pub fields: Vec<RustField>,
+    /// Extra derive macros (e.g., ["Debug", "Clone", "Copy"] for message structs).
+    pub derives: Vec<String>,
 }
 
 /// A field in a Rust struct.
@@ -111,6 +113,7 @@ pub struct StepBody {
 pub struct StepArm {
     pub variant: String,
     pub do_actions: Vec<Assignment>,
+    pub exit_actions: Vec<Assignment>,
     pub transitions: Vec<TransitionCode>,
 }
 
@@ -126,10 +129,12 @@ pub enum TransitionCode {
     Conditional {
         condition: String,
         target_variant: String,
+        transition_actions: Vec<Assignment>,
         entry_actions: Vec<Assignment>,
     },
     Unconditional {
         target_variant: String,
+        transition_actions: Vec<Assignment>,
         entry_actions: Vec<Assignment>,
     },
 }

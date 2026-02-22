@@ -3,6 +3,11 @@
 package Button {
     private import ScalarValues::*;
 
+    port def ButtonPort {
+        out signal pressed_event : Boolean;
+        out signal released_event : Boolean;
+    }
+
     action def reset_debounce {
         debounce_counter := 0;
         pressed := false;
@@ -41,6 +46,8 @@ package Button {
 
     // Button handler actor
     part def ButtonActor {
+        port button_out : ButtonPort;
+
         attribute pressed : Boolean = false;
         attribute press_count : Integer = 0;
         attribute debounce_counter : Integer = 0;

@@ -44,6 +44,9 @@ package Control {
 
     // Real-time control actor
     part def RealtimeControlActor {
+        port button_in : ~ButtonPort;
+        port maintenance_in : ~StatusPort;
+
         attribute control_value : Real = 0.0;
         attribute cycle_count : Integer = 0;
         attribute error_flag : Boolean = false;
