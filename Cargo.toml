@@ -19,7 +19,7 @@ embassy-stm32 = { version = "0.5", features = ["stm32u585ai", "time-driver-any",
 ratatui = { version = "0.30", default-features = false, features = ["all-widgets", "portable-atomic"], optional = true }
 mousefood = { version = "0.4", default-features = false, features = ["fonts"], optional = true }
 embedded-graphics = { version = "0.8", optional = true }
-mipidsi = { version = "0.9", optional = true }
+mipidsi = { version = "0.10", optional = true }
 embedded-alloc = { version = "0.7", optional = true }
 embedded-hal-bus = { version = "0.3", features = ["defmt-03"], optional = true }
 
