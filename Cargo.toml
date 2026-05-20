@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-embassy-executor = { version = "0.9", features = ["arch-cortex-m", "executor-thread"] }
+embassy-executor = { version = "0.10", features = ["arch-cortex-m", "executor-thread"] }
 embassy-time = { version = "0.5" }
 embassy-sync = { version = "0.7" }
 
