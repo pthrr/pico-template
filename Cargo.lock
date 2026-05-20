@@ -1073,7 +1073,7 @@ dependencies = [
  "embassy-executor",
  "embassy-rp",
  "embassy-stm32",
- "embassy-sync 0.7.2",
+ "embassy-sync 0.8.0",
  "embassy-time",
  "panic-probe",
  "portable-atomic",
