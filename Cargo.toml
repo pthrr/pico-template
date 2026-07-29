@@ -6,7 +6,7 @@ edition = "2024"
 [dependencies]
 embassy-executor = { version = "0.9", features = ["arch-cortex-m", "executor-thread"] }
 embassy-time = { version = "0.5" }
-embassy-sync = { version = "0.7" }
+embassy-sync = { version = "0.8" }
 
 # RP2040 specific dependencies
 embassy-rp = { version = "0.9", optional = true }
