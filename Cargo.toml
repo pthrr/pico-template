@@ -9,7 +9,7 @@ embassy-time = { version = "0.5" }
 embassy-sync = { version = "0.8" }
 
 # RP2040 specific dependencies
-embassy-rp = { version = "0.9", optional = true }
+embassy-rp = { version = "0.10", optional = true }
 rp2040-boot2 = { version = "0.3", optional = true }
 
 # STM32 specific dependencies
